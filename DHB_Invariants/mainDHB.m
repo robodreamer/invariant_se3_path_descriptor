@@ -1,7 +1,9 @@
 % Author: Matteo Saveriano - 01.03.18
+% Modified by Andy Park in Nov, 2023
 
 clear
 close all
+clc
 
 %% Construct 6DOF trajectory
 dt = 0.1; % sample time
@@ -45,8 +47,8 @@ R = Rz * Ry * Rx;
 % Homogeneous transformation matrix
 T0 = [R [x0; y0; z0]; 0 0 0 1];
 
-% Initialize the matrix to hold the rotation vectors
-rotation_vectors = zeros(size(rot_data));
+% rvec_data
+rvec_data = zeros(size(rot_data));
 
 % Loop through each set of Euler angles in 'rot_data'
 for i = 1:size(rot_data, 1)
@@ -60,10 +62,10 @@ for i = 1:size(rot_data, 1)
     axang = rotm2axang(rotm);
     
     % Convert axis-angle to rotation vector and store it
-    rotation_vectors(i, :) = axang(4) * axang(1:3);
+    rvec_data(i, :) = axang(4) * axang(1:3);
 end
 
-% Now 'rotation_vectors' contains the rotation vectors for all sets of Euler angles
+% Now 'rvec_data' contains the rotation vectors for all sets of Euler angles
 
 % Compute velocity (twist)
 twists(:,4:6) = diff([x y z],1,1)/dt;
@@ -83,7 +85,7 @@ end
 %% Compute DHB invariants
 
 % Compute position based DHB invariants
-[m_p, theta_p_1, theta_p_2, m_r, theta_r_1, theta_r_2, Hp0, Hr0] = computeDHB(pos_data, rotation_vectors, 'pos', T0);
+[m_p, theta_p_1, theta_p_2, m_r, theta_r_1, theta_r_2, Hp0, Hr0] = computeDHB(pos_data, rvec_data, 'vel', T0);
 invariants_pos = [m_p, theta_p_1, theta_p_2, m_r, theta_r_1, theta_r_2];
 
 % Compute velocity based DHB invariants
@@ -112,7 +114,7 @@ end
 
 %% Reconstruct original trajectory
 % position
-[pr, rvec_r] = reconstructTrajectory(invariants_pos, Hp0, Hr0, 'pos');
+[pr, rvec_r] = reconstructTrajectory(invariants_pos, Hp0, Hr0, 'vel');
 
 % velocity
 [vr, wr] = reconstructTrajectory(invariants_vel, Hv0, Hw0, 'vel');
@@ -120,7 +122,7 @@ end
 %% Compute reconstruction errors
 
 %-- error with position
-errSP_pos = [(pr - pos_data(1:N-2,:)).^2 (rvec_r - rotation_vectors(1:N-2,:)).^2];
+errSP_pos = [(pr - pos_data(1:N-2,:)).^2 (rvec_r - rvec_data(1:N-2,:)).^2];
 
 % Compute rmse error
 err_pos = zeros(1,6);
@@ -145,26 +147,25 @@ disp(['Reconstruction errors in velocity (RMSE): ' num2str(RMSE_vel)])
 
 %% Plot original and reconstructed paths
 
-pose_data = [pos_data, rotation_vectors];
-pose_r_data = [rvec_r, pr];
+% Plot original and reconstructed paths -- position
+pose_data = [rvec_data, pos_data]; % original
+pose_r_data = [rvec_r, pr]; % reconstructed
 
-% position
 figure('NumberTitle', 'off', 'Name', 'DHB to Cartesian pose');
 for i=1:6
     subplot(2,3,i)
     plot(t_data, pose_data(:,i),'g','LineWidth',4)
     hold on;
+    plot(t_data(1:end-2),pose_r_data(:,i),'b','LineWidth',2)        
     if(i<4)
-        plot(t_data(1:end-2),pose_r_data(:,i),'b','LineWidth',2)
-        ylabel(['rot' num2str(i)])
+        ylabel(['r_' num2str(i)])
     else
-        plot(t_data(1:end-2),pose_r_data(:,i-3),'b','LineWidth',2)
-        ylabel(['p_' num2str(i-2)])
+        ylabel(['p_' num2str(i-3)])
     end
     grid on
 end
 
-% velocity
+% Plot original and reconstructed paths -- velocity
 figure('NumberTitle', 'off', 'Name', 'DHB to Cartesian velocity');
 for i=1:6
     subplot(2,3,i)
