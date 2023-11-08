@@ -1,68 +1,70 @@
 %% Functions that reconstruct a Cartesian trajectory from its DHB invariant representation
-% See: D. Lee, R. Soloperto, and M. Saveriano, "Bidirectional invariant
-%      representation of rigid body motions and its application to gesture
-%      recognition and reproduction", Auton. Robots, 42(1):125–145, 2018.
+% This script reconstructs the trajectory of a rigid body in 3D space from
+% its Denavit–Hartenberg inspired Bidirectional (DHB) invariant representation.
 
 %% Reconstruct Cartesian trajectory (position or velocity)
-% Input: invariants -> DHB invariants ([N-2]x6 array) 
-%        Hv0 -> Initial linear frame
-%        Hw0 -> Initial angular frame
+% Inputs:
+%        dhb_invariants - Matrix of DHB invariants ([N-2]x6 array) 
+%        initial_linear_frame - Initial linear frame (4x4 matrix)
+%        initial_angular_frame - Initial angular frame (4x4 matrix)
+%        method - String, 'pos' for position or otherwise for velocity
 %
-% Output: v -> position or linear velocity trajectory ([N-2]x3 array)
-%         w -> relative rotation vector or angular velocity trajectory ([N-2]x3 array)
+% Outputs:
+%        trajectory_position - Position or linear velocity trajectory ([N-2]x3 array)
+%        trajectory_rotation - Relative rotation vector or angular velocity trajectory ([N-2]x3 array)
 
-function [v, w] = reconstructTrajectory(invariants, Hv0, Hw0, method)
-    mv   = invariants(:,1);
-    tv_1 = invariants(:,2);
-    tv_2 = invariants(:,3);
-    mw   = invariants(:,4);
-    tw_1 = invariants(:,5);
-    tw_2 = invariants(:,6);
+function [trajectory_position, trajectory_rotation] = reconstructTrajectory2(dhb_invariants, initial_linear_frame, initial_angular_frame, method)
+    linear_magnitude = dhb_invariants(:,1);
+    linear_angle_y = dhb_invariants(:,2);
+    linear_angle_x = dhb_invariants(:,3);
+    angular_magnitude = dhb_invariants(:,4);
+    angular_angle_y = dhb_invariants(:,5);
+    angular_angle_x = dhb_invariants(:,6);
 
-    N = size(tv_1,1);
+    num_samples = size(linear_angle_y,1);
 
-    v = zeros(N,3);
-    w = zeros(N,3);
+    trajectory_position = zeros(num_samples,3);
+    trajectory_rotation = zeros(num_samples,3);
 
-    if(strcmp(method, 'pos'))
-        coef = 1;
-    else
-        coef = 0;
-    end
+    position_mode = strcmp(method, 'pos');
 
-    Hv0(4,4) = coef;
+    initial_linear_frame(4,4) = double(position_mode);
 
-    for i = 1:N
-        if(strcmp(method, 'pos'))
-            v(i,:) = Hv0(1:3,4)';
-            Rp = rotY(tv_1(i))*rotX(tv_2(i));
-            P = [mv(i) 0 0]';
-            H = [Rp P; 0 0 0 coef];
-            Hv0 = Hv0 * H;
-        else
-            Rp = rotY(tv_1(i))*rotX(tv_2(i));
-            P = [mv(i) 0 0]';
-            H = [Rp P; 0 0 0 coef];
-            Hv0 = Hv0 * H;
-            v(i,:) = Hv0(1:3,4)';
+    for i = 1:num_samples
+        if position_mode
+            trajectory_position(i,:) = initial_linear_frame(1:3,4)';
+        end
+        
+        % Compute rotation matrices for the position or velocity
+        rotation_matrix_position = rotateY(linear_angle_y(i)) * rotateX(linear_angle_x(i));
+        translation_vector = [linear_magnitude(i) 0 0]';
+        transformation_matrix = [rotation_matrix_position translation_vector; 0 0 0 double(position_mode)];
+        initial_linear_frame = initial_linear_frame * transformation_matrix;
+        
+        % Only update the position if we're dealing with velocities
+        if ~position_mode
+            trajectory_position(i,:) = initial_linear_frame(1:3,4)';
         end
 
-        w(i,:) = (Hw0*[mw(i); 0; 0])';
-        Rr = rotY(tw_1(i))*rotX(tw_2(i));
-        Hw0 = Hw0 * Rr;
+        % Apply the rotation to the angular frame and update the rotation trajectory
+        trajectory_rotation(i,:) = (initial_angular_frame * [angular_magnitude(i); 0; 0])';
+        rotation_matrix_rotation = rotateY(angular_angle_y(i)) * rotateX(angular_angle_x(i));
+        initial_angular_frame = initial_angular_frame * rotation_matrix_rotation;
     end 
 end
 
-%% Elementary rotation around the x axis
-function R = rotX(phi)
-    R = [1        0         0; ...
-         0 cos(phi) -sin(phi); ...
-         0 sin(phi)  cos(phi)];
+%% Elementary rotation around the x-axis
+% phi - Angle to rotate about the x-axis
+function rotation_matrix = rotateX(phi)
+    rotation_matrix = [1        0         0; ...
+                       0 cos(phi) -sin(phi); ...
+                       0 sin(phi)  cos(phi)];
 end
 
-%% Elementary rotation around the y axis
-function R = rotY(beta)
-    R = [cos(beta) 0 sin(beta); ...
-                 0 1         0; ...
-        -sin(beta) 0 cos(beta)];
+%% Elementary rotation around the y-axis
+% beta - Angle to rotate about the y-axis
+function rotation_matrix = rotateY(beta)
+    rotation_matrix = [cos(beta) 0 sin(beta); ...
+                       0         1         0; ...
+                      -sin(beta) 0 cos(beta)];
 end

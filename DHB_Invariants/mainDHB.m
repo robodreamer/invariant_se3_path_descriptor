@@ -85,12 +85,12 @@ end
 %% Compute DHB invariants
 
 % Compute position based DHB invariants
-[m_p, theta_p_1, theta_p_2, m_r, theta_r_1, theta_r_2, Hp0, Hr0] = computeDHB(pos_data, rvec_data, 'vel', T0);
-invariants_pos = [m_p, theta_p_1, theta_p_2, m_r, theta_r_1, theta_r_2];
+[linear_motion_invariant, angular_motion_invariant, linear_frame_initial, angular_frame_initial] = computeDHB(pos_data, rvec_data, 'vel', T0);
+invariants_pos = [linear_motion_invariant, angular_motion_invariant];
 
 % Compute velocity based DHB invariants
-[m_v, theta_v_1, theta_v_2, m_w, theta_w_1, theta_w_2, Hv0, Hw0] = computeDHB(twists(:,4:6), twists(:,1:3), 'vel');
-invariants_vel = [m_v, theta_v_1, theta_v_2, m_w, theta_w_1, theta_w_2];
+[linear_motion_invariant_v, angular_motion_invariant_v, linear_frame_initial_v, angular_frame_initial_v] = computeDHB(twists(:,4:6), twists(:,1:3), 'vel');
+invariants_vel = [linear_motion_invariant_v, angular_motion_invariant_v];
 
 %% Plot invariant trajectories
 
@@ -114,10 +114,10 @@ end
 
 %% Reconstruct original trajectory
 % position
-[pr, rvec_r] = reconstructTrajectory(invariants_pos, Hp0, Hr0, 'vel');
+[pr, rvec_r] = reconstructTrajectory(invariants_pos, linear_frame_initial, angular_frame_initial, 'vel');
 
 % velocity
-[vr, wr] = reconstructTrajectory(invariants_vel, Hv0, Hw0, 'vel');
+[vr, wr] = reconstructTrajectory(invariants_vel, linear_frame_initial_v, angular_frame_initial_v, 'vel');
 
 %% Compute reconstruction errors
 
