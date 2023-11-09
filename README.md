@@ -1,23 +1,26 @@
-# DHB_invariant_representation
+# Invariant SE3 Path Descriptor
 
-This repository contains MATLAB and Python scripts to implement DHB invariant representation of rigid body motions. The original code was written by [Matteo Saveriano](https://github.com/matteosaveriano/DHB_invariant_representation).
+This repository contains MATLAB and Python scripts to implement DHB invariant representation of rigid body motions. The original code was written by [Matteo Saveriano](https://github.com/matteosaveriano/DHB_invariant_representation). The original code was written in MATLAB and this repository contains a Python implementation of the same code.
 
 ## Components description
-The folder _DHB_Invariants_ contains 3 scripts:
-- ```computeDHB.m```: Compute DHB invariants given a Cartesian trajectory.
+The folder `matlab` contains the following constraints:
+- ```computeDHB.m```: Compute DHB invariants given a Cartesian trajectory (6D pose or twist).
 - ```reconstructTrajectory.m```: Reconstruct a Cartesian trajectory from its DHB invariant representation.
-- ```mainDHB.m```: Simple demo script.
+- ```mainDHB.m```: Simple demo script that shows how a simple Cartesian 6D trajectory can be transformed into a set of DHB invariants and vice versa.
+- ```tutorial_DHB.mlx```: MATLAB live script that demonstrates some use-cases of the DHB invariant representation.
 
-The code is compatible with Matlab and Octave.
+## TODO
+
+- Validate and demonstrate the invariance properties that were claimed in the original paper.
+- Show the generalization capability with the DHB invariant representation.
+- Create Python scripts and notebook for examples.
+- Turn the script into a Python package with pip.
 
 ## Software Requirements
-The code is developed and tested under _Matlab 2015b_.
-
-## Usage
-We prepared a simple demo in ```mainDHB.m``` to show how a Cartesian 6D trajectory is transformed into a set of DHB invariants and vice versa.
+The code is developed and tested under _Matlab 2023b_.
 
 ## References
-Please acknowledge the authors in any acedemic publication that used parts of these codes.
+Please acknowledge the original authors in any academic publication that used parts of these codes.
 ```
 @article{Lee2018,
     title = "Bidirectional invariant representation of rigid body motions and its application to gesture recognition and reproduction",
@@ -40,7 +43,8 @@ Please acknowledge the authors in any acedemic publication that used parts of th
 
 ## Maintainer
 
-- Andy Park <andypark.purdue@gmail.com>.
+- Andy Park <andypark.purdue@gmail.com>
+- Sungjoon Choi <sungjoon-choi@korea.ac.kr>
 
 ## Licence
 This repository contains free software: you can redistribute it and/or modify it under the terms of the GNU General Public License version 3 as published by the Free Software Foundation.
