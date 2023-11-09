@@ -1,5 +1,7 @@
 # DHB_invariant_representation
 
+This repository contains MATLAB and Python scripts to implement DHB invariant representation of rigid body motions. The original code was written by [Matteo Saveriano](https://github.com/matteosaveriano/DHB_invariant_representation).
+
 ## Components description
 The folder _DHB_Invariants_ contains 3 scripts:
 - ```computeDHB.m```: Compute DHB invariants given a Cartesian trajectory.
@@ -35,6 +37,10 @@ Please acknowledge the authors in any acedemic publication that used parts of th
     pages = "6146-6152"
 }
 ```
+
+## Maintainer
+
+- Andy Park <andypark.purdue@gmail.com>.
 
 ## Licence
 This repository contains free software: you can redistribute it and/or modify it under the terms of the GNU General Public License version 3 as published by the Free Software Foundation.
