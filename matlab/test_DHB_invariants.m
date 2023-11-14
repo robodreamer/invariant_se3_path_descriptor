@@ -3,7 +3,7 @@
 
 clc; clear all; close all;
 
-select_program = 1;
+select_program = 2;
 
 %%% 11-10-23
 % 1) show the invariance over affine transforms
@@ -60,11 +60,10 @@ if (select_program == 1)
     dhbInvNames = {'m_p' '\theta_p^1' '\theta_p^2' 'm_{\omega}' '\theta_{\omega}^1' '\theta_{\omega}^1'};
     for i=1:6
         subplot(2,3,i)
-        plot(invariants_pos(:,i),'k','LineWidth',2)
+        plot(invariants_pos(:,i),'LineWidth',2)
         ylabel(dhbInvNames{i});
         grid on
     end
-    plot_darkmode
 
     %% Reconstruct the original trajectory
 
@@ -102,7 +101,6 @@ if (select_program == 1)
         end
         grid on
     end
-    plot_darkmode
 
     %% Plot the original and reconstructed paths in 3D
 
@@ -131,7 +129,6 @@ if (select_program == 1)
     plotTransforms(pos_r_data(1,:), qt_r_data(1,:), 'FrameSize', 0.05);
     plotTransforms(pos_r_data(end,:), qt_r_data(end,:), 'FrameSize', 0.05);
     grid on;
-    % plot_darkmode;
 
     %% Apply affine transform to the pos data and show invariance
 
@@ -200,7 +197,7 @@ if (select_program == 1)
         ylabel(dhbInvNames{i});
         grid on
     end
-    plot_darkmode
+
 
     %% Reconstruction after affine transforms
 
@@ -242,7 +239,6 @@ if (select_program == 1)
     plotTransforms(pos_r_tr_data(1,:), qt_r_data(1,:), 'FrameSize', 0.05);
     plotTransforms(pos_r_tr_data(end,:), qt_r_data(end,:), 'FrameSize', 0.05);
     grid on;
-    plot_darkmode;
 
     %% Fit a Spline to generate time-invariant data
 
@@ -260,4 +256,191 @@ if (select_program == 1)
     pp.qd = ppDer(pp.q);
     pp.qdd = ppDer(pp.qd);
 
+end
+
+%%% 11-14-23
+% 1) simple example of trajectory adaptation -- position only
+if (select_program == 2)
+
+    %% Data Preparation
+
+    % loading pose data, format: rows=samples, columns=x|y|z|qx|qy|qz|qw
+    % note: you can also use marker data together with the function markers2pose.m
+
+    load data/vive_data.mat
+    N = length(measured_pose_coordinates);
+    dt = 1/60; % timestep
+
+    % Convert quaternion to rotation matrix
+    pos_data = measured_pose_coordinates(:,2:4); % position
+    rotm_data = zeros(3,3,N);
+    T_data = zeros(4,4,N);
+    rvec_data = zeros(N, 3);
+    qt_data = zeros(N, 4);
+    for i=1:N
+        % [qw, qx, qy, qz]
+        pos = pos_data(i,:)';
+        qt = [measured_pose_coordinates(i,8), measured_pose_coordinates(i,5:7)];
+        rotm = quat2rotm(qt); % rotation matrix
+        angvec = rotm2axang(rotm); % angle and axis
+        rvec = angvec(4) * angvec(1:3); % rotation vector
+        T = [rotm, pos; 0 0 0 1];
+
+        % store the data
+        rotm_data(:,:,i) = rotm;
+        rvec_data(i, :) = rvec;
+        T_data(:,:,i) = T;
+        qt_data(i,:) = qt;
+    end
+
+    % Get the initial transform
+    T0 = [rotm_data(:,:,1) pos_data(1,:)'; 0 0 0 1];
+
+    % get the pos diff data
+    pos_diff_data = diff(pos_data);
+
+    %% Compute DHB invariants
+
+    % Compute position based DHB invariants
+    [linear_motion_invariant, angular_motion_invariant, linear_frame_initial, angular_frame_initial] = computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
+    invariants_pos = [linear_motion_invariant, angular_motion_invariant];
+
+    % store the original
+    invariants_pos_orig = invariants_pos;
+
+    %% Reconstruct the original trajectory and plot it in 3D
+
+    % Modify the invariants
+    modify_invariants = true;
+    invariants_pos = invariants_pos_orig;
+    temp_path = linspace(0.5, 1, size(invariants_pos, 1))';
+    if (modify_invariants)
+        % magnitute
+        invariants_pos(:,1) = invariants_pos(:, 1) .* temp_path;
+        % shape paramter 1
+        % invariants_pos(:,2) = invariants_pos(:, 2) + temp_path;
+        % shape parameter 2
+        % invariants_pos(:,3) = invariants_pos(:, 3) + temp_path;
+    end
+
+    % position
+    [pos_r_data, rvec_r_data] = reconstructTrajectory(invariants_pos, linear_frame_initial, angular_frame_initial, 'pos');
+
+    % compute reconstruction errors
+    errSP_pos = [(pos_r_data - pos_data(1:end-3,:)).^2 (rvec_r_data - rvec_data(1:end-3,:)).^2];
+
+    % Compute rmse error
+    err_pos = zeros(1,6);
+    for i=1:6
+        err_pos(i) = sum(errSP_pos(:,i));
+    end
+
+    RMSE_pos = sqrt([sum(err_pos(1:3)) sum(err_pos(4:6))]./(N-2));
+    disp(['Reconstruction errors in pose (RMSE): ' num2str(RMSE_pos)])
+
+    % Plot the original and reconstructed paths in 3D
+
+    % Convert the rotation vector data into rotation matrix and
+    % reconstruct the transform data.
+    qt_r_data = rvecdata2qt(rvec_r_data);
+
+    % plot 3D trajectory
+    figure('NumberTitle', 'off', 'Name', 'Reconstructed Path with Modified Invariants');
+    hold on;
+    plotTransforms(pos_data(1,:), qt_data(1,:), 'FrameSize', 0.05);
+    plotTransforms(pos_data(N-3,:), qt_data(N-3,:), 'FrameSize', 0.05);
+    plot3(pos_data(1:N-3,1), pos_data(1:N-3,2), pos_data(1:N-3,3), 'b');
+
+    plot3(pos_r_data(:,1), pos_r_data(:,2), pos_r_data(:,3), 'r');
+    plotTransforms(pos_r_data(1,:), qt_r_data(1,:), 'FrameSize', 0.05);
+    plotTransforms(pos_r_data(end,:), qt_r_data(end,:), 'FrameSize', 0.05);
+    grid on;
+
+    %% A simple 3D position target adaptation
+
+    % set a desired target location
+    goal_orig = pos_data(N-3, :);
+    goal_offset = [0.2, 0.1, 0.2];
+    goal_new = goal_orig + goal_offset;
+
+    % plot 3D trajectory with original and new target positions
+    figure('NumberTitle', 'off', 'Name', 'Reconstructed Path with Target Adaptation');
+    hold on;
+    plot3(pos_data(1:N-3,1), pos_data(1:N-3,2), pos_data(1:N-3,3), 'b');
+    plot3(goal_orig(1), goal_orig(2), goal_orig(3), 'oy');
+    plot3(goal_new(1), goal_new(2), goal_new(3), 'or');
+    grid on;
+
+    %% generate a GRP path that connects the initial path to the new target
+
+    Nframes = size(pos_data,1);
+
+    % specify algorithms parameters
+    algorithm_params = struct('init_sample_size',100,'sample_size',30,'max_iter',50,'h',10,'alpha',5e-1);
+
+    % run trajectory optimization
+    init_pose = pos_data(1, :)';
+    final_pose = goal_new';
+
+    tic;
+    global quiet;
+    quiet = 1;
+    cost_fun = @(traj)cost_shape_descriptor(traj, rvec_data, T0, linear_motion_invariant);
+    result = tromp_run(algorithm_params, cost_fun, init_pose, final_pose, Nframes);
+    toc;
+
+    %% plot the results
+    % plot the current trajectory
+    plot_animation = 1;
+    Niter = numel(result.learning_curve);
+    if (plot_animation)
+        figure('NumberTitle', 'off', 'Name', 'Progress trajectory in adaptation');
+        for iter=1:Niter
+            % GP-STOMP
+            cla;
+            curr_traj = result.traj_data{iter}';
+            opt_cost = result.learning_curve(iter);
+
+            plot3(goal_new(1), goal_new(2), goal_new(3), 'or');
+            hold on;
+            plot3(pos_data(1:N-3,1), pos_data(1:N-3,2), pos_data(1:N-3,3), 'b');
+            plot3(curr_traj(:,1), curr_traj(:,2), curr_traj(:,3));
+            title(strcat('GP-STOMP -- current traj ',sprintf(' [%d/%d], cost: (%.3f)',iter, Niter, opt_cost)));
+
+            if(iter == 1)
+                disp('press Enter to start');
+                pause();
+            else
+                pause(1e-1);
+            end
+        end
+    end
+
+
+end
+
+% a function that converts rotation vector data to quaternion vector data
+function qt_r_data = rvecdata2qt(rvec_r_data)
+    N = size(rvec_r_data, 1);
+    qt_r_data = zeros(N, 4);
+    for i = 1:N
+        rvec_r = rvec_r_data(i,:);
+        rotm_r = rotationVectorToMatrix(rvec_r);
+        qt_r = rotm2quat(rotm_r);
+        qt_r_data(i, :) = qt_r;
+    end
+end
+
+% an example cost function for trajectory optimization
+% for shape preservation in terms of the shape invariant descriptor
+function [cost, cost_array] = cost_shape_descriptor(pos_data, rvec_data, T0, linear_motion_invariant)
+
+    % map the current position path into the invariants
+    pos_diff_data = diff(pos_data');
+    [pos_invariant, rot_invariant, pos_initial, rot_initial] = computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
+
+    % compute reconstruction errors
+    cost = norm(abs(pos_invariant - linear_motion_invariant));
+
+    disp(['Reconstruction errors in pose (RMSE): ' num2str(cost)])
 end

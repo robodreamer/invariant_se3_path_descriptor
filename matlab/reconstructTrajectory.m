@@ -13,7 +13,7 @@
 %        trajectory_position - Position or linear velocity trajectory ([N-2]x3 array)
 %        trajectory_rotation - Relative rotation vector or angular velocity trajectory ([N-2]x3 array)
 
-function [trajectory_position, trajectory_rotation] = reconstructTrajectory2(dhb_invariants, initial_linear_frame, initial_angular_frame, method)
+function [trajectory_position, trajectory_rotation] = reconstructTrajectory(dhb_invariants, initial_linear_frame, initial_angular_frame, method)
     linear_magnitude = dhb_invariants(:,1);
     linear_angle_y = dhb_invariants(:,2);
     linear_angle_x = dhb_invariants(:,3);

@@ -16,7 +16,7 @@
 %        linear_frame_initial - Initial linear frame
 %        angular_frame_initial - Initial angular frame
 
-function [linear_motion_invariant, angular_motion_invariant, linear_frame_initial, angular_frame_initial] = computeDHB2(position_diff, rotation_diff, method, initial_pose)
+function [linear_motion_invariant, angular_motion_invariant, linear_frame_initial, angular_frame_initial] = computeDHB(position_diff, rotation_diff, method, initial_pose)
 
 [num_samples, ~] = size(rotation_diff);
 
