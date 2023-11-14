@@ -8,6 +8,7 @@ The folder `matlab` contains the following constraints:
 - ```reconstructTrajectory.m```: Reconstruct a Cartesian trajectory from its DHB invariant representation.
 - ```mainDHB.m```: Simple demo script that shows how a simple Cartesian 6D trajectory can be transformed into a set of DHB invariants and vice versa.
 - ```tutorial_DHB.mlx```: MATLAB live script that demonstrates some use-cases of the DHB invariant representation.
+- ```test_DHB_invariants.m```: Test the DHB invariant representation in various scenarios.
 
 ## TODO
 

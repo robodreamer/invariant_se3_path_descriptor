@@ -376,7 +376,7 @@ if (select_program == 2)
     Nframes = size(pos_data,1);
 
     % specify algorithms parameters
-    algorithm_params = struct('init_sample_size',100,'sample_size',30,'max_iter',50,'h',10,'alpha',5e-1);
+    algorithm_params = struct('init_sample_size',100,'sample_size',30,'max_iter',300,'h',10,'alpha',5e-1);
 
     % run trajectory optimization
     init_pose = pos_data(1, :)';
@@ -384,7 +384,7 @@ if (select_program == 2)
 
     tic;
     global quiet;
-    quiet = 1;
+    quiet = 0;
     cost_fun = @(traj)cost_shape_descriptor(traj, rvec_data, T0, linear_motion_invariant);
     result = tromp_run(algorithm_params, cost_fun, init_pose, final_pose, Nframes);
     toc;
@@ -442,5 +442,5 @@ function [cost, cost_array] = cost_shape_descriptor(pos_data, rvec_data, T0, lin
     % compute reconstruction errors
     cost = norm(abs(pos_invariant - linear_motion_invariant));
 
-    disp(['Reconstruction errors in pose (RMSE): ' num2str(cost)])
+    % disp(['Reconstruction errors in pose (RMSE): ' num2str(cost)])
 end
