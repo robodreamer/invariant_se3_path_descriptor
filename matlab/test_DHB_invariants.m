@@ -1,7 +1,8 @@
 %%% Testing the concept of DHB invariants
 % Andy Park, Nov 2023
 
-clc; clear all; close all;
+addpath(genpath(pwd));
+ccc;
 
 select_program = 2;
 
@@ -367,16 +368,20 @@ if (select_program == 2)
     init_traj = pos_data + pos_delta_data;
 
     % plot 3D trajectory with original and new target positions
-    figure('NumberTitle', 'off', 'Name', 'Reconstructed Path with Target Adaptation');
-    hold on;
-    plot3(pos_data(:,1), pos_data(:,2), pos_data(:,3), 'b');
-    plot3(goal_orig(1), goal_orig(2), goal_orig(3), 'oy');
-    plot3(goal_new(1), goal_new(2), goal_new(3), 'or');
-    plot3(init_traj(:,1), init_traj(:,2), init_traj(:,3));
+    plot_transformed_path = false;
+    if (plot_transformed_path)
+        figure('NumberTitle', 'off', 'Name', 'Reconstructed Path with Target Adaptation');
+        hold on;
+        plot3(pos_data(:,1), pos_data(:,2), pos_data(:,3), 'b');
+        plot3(goal_orig(1), goal_orig(2), goal_orig(3), 'oy');
+        plot3(goal_new(1), goal_new(2), goal_new(3), 'or');
+        plot3(init_traj(:,1), init_traj(:,2), init_traj(:,3));
+        view([-134.131 22.691]);
 
-    grid on;
+        grid on;
+    end
 
-    %% generate a GRP path that connects the initial path to the new target
+    %% generate a GRP path that connects the initial path to the new target and optimize it
 
     Nframes = size(pos_data,1);
 
