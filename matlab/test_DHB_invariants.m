@@ -302,13 +302,10 @@ if (select_program == 2)
     %% Compute DHB invariants
 
     % Compute position based DHB invariants
-    [linear_motion_invariant, angular_motion_invariant, linear_frame_initial, angular_frame_initial] = computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
-    invariants_pos = [linear_motion_invariant, angular_motion_invariant];
+    [pos_invariant_orig, rot_invariant_orig, linear_frame_initial, angular_frame_initial] = computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
+    invariants_pos_orig = [pos_invariant_orig, rot_invariant_orig];
 
-    % store the original
-    invariants_pos_orig = invariants_pos;
-
-    %% Reconstruct the original trajectory and plot it in 3D
+    % Reconstruct the original trajectory and plot it in 3D
 
     % Modify the invariants
     modify_invariants = true;
@@ -359,16 +356,24 @@ if (select_program == 2)
     %% A simple 3D position target adaptation
 
     % set a desired target location
-    goal_orig = pos_data(N-3, :);
-    goal_offset = [0.2, 0.1, 0.2];
+    pathsize = N-3;
+    goal_orig = pos_data(pathsize, :);
+    goal_offset = [-0.5, -1.5, 0.5];
+    % goal_offset = zeros(1,3);
     goal_new = goal_orig + goal_offset;
+
+    % create an init trajectory with a simple transformation
+    pos_delta_data = SpatialRobotModel.jtraj(zeros(1,3), goal_offset, N);
+    init_traj = pos_data + pos_delta_data;
 
     % plot 3D trajectory with original and new target positions
     figure('NumberTitle', 'off', 'Name', 'Reconstructed Path with Target Adaptation');
     hold on;
-    plot3(pos_data(1:N-3,1), pos_data(1:N-3,2), pos_data(1:N-3,3), 'b');
+    plot3(pos_data(:,1), pos_data(:,2), pos_data(:,3), 'b');
     plot3(goal_orig(1), goal_orig(2), goal_orig(3), 'oy');
     plot3(goal_new(1), goal_new(2), goal_new(3), 'or');
+    plot3(init_traj(:,1), init_traj(:,2), init_traj(:,3));
+
     grid on;
 
     %% generate a GRP path that connects the initial path to the new target
@@ -376,7 +381,7 @@ if (select_program == 2)
     Nframes = size(pos_data,1);
 
     % specify algorithms parameters
-    algorithm_params = struct('init_sample_size',100,'sample_size',30,'max_iter',300,'h',10,'alpha',5e-1);
+    algorithm_params = struct('init_sample_size',100,'sample_size',100,'max_iter',100,'h',10,'alpha',5e-1);
 
     % run trajectory optimization
     init_pose = pos_data(1, :)';
@@ -385,8 +390,8 @@ if (select_program == 2)
     tic;
     global quiet;
     quiet = 0;
-    cost_fun = @(traj)cost_shape_descriptor(traj, rvec_data, T0, linear_motion_invariant);
-    result = tromp_run(algorithm_params, cost_fun, init_pose, final_pose, Nframes);
+    cost_fun = @(traj)cost_shape_descriptor(traj, rvec_data, T0, pos_invariant_orig);
+    result = tromp_run(algorithm_params, cost_fun, init_pose, final_pose, Nframes, init_traj');
     toc;
 
     %% plot the results
@@ -396,24 +401,52 @@ if (select_program == 2)
     if (plot_animation)
         figure('NumberTitle', 'off', 'Name', 'Progress trajectory in adaptation');
         for iter=1:Niter
-            % GP-STOMP
             cla;
             curr_traj = result.traj_data{iter}';
             opt_cost = result.learning_curve(iter);
-
-            plot3(goal_new(1), goal_new(2), goal_new(3), 'or');
+            plot3(pos_data(1:N-3,1), pos_data(1:N-3,2), pos_data(1:N-3,3),'g');
             hold on;
-            plot3(pos_data(1:N-3,1), pos_data(1:N-3,2), pos_data(1:N-3,3), 'b');
-            plot3(curr_traj(:,1), curr_traj(:,2), curr_traj(:,3));
-            title(strcat('GP-STOMP -- current traj ',sprintf(' [%d/%d], cost: (%.3f)',iter, Niter, opt_cost)));
+            plot3(init_traj(:,1), init_traj(:,2), init_traj(:,3),'m');
+            plot3(curr_traj(:,1), curr_traj(:,2), curr_traj(:,3),'y');
+            title(strcat('Optimized path ',sprintf(' [%d/%d], cost: (%.3f)',iter, Niter, opt_cost)));
+
+            plot3(goal_orig(1), goal_orig(2), goal_orig(3), 'og');
+            plot3(goal_new(1), goal_new(2), goal_new(3), 'om');
+            legend('Original', 'Transformed', 'Optimized', 'Original Target', 'New Target');
+            grid on;
+            view([-134.131 22.691]);
 
             if(iter == 1)
                 disp('press Enter to start');
                 pause();
             else
                 pause(1e-1);
+                drawnow;
             end
         end
+    end
+
+    %% compare the DHB invariants before and after optimization
+    % Compute DHB invariants for trajectory before optimization
+    [pos_invariant_before, rot_invariant_before, linear_frame_initial, angular_frame_initial] = computeDHB(diff(init_traj), rvec_data(1:end-1,:), 'pos', T0);
+
+    % Compute DHB invariants for trajectory after optimization
+    final_traj = result.traj_data{end}';
+    [pos_invariant_after, rot_invariant_after, linear_frame_initial, angular_frame_initial] = computeDHB(diff(final_traj), rvec_data(1:end-1,:), 'pos', T0);
+
+    % Plot the invariants
+    figure('NumberTitle', 'off', 'Name', 'Cartesian pose to DHB');
+
+    dhbInvNames = {'m_p' '\theta_p^1' '\theta_p^2'};
+    for i=1:3
+        subplot(3,1,i)
+        plot(invariants_pos_orig(:,i))
+        hold on;
+        plot(pos_invariant_before(:,i))
+        plot(pos_invariant_after(:,i))
+        ylabel(dhbInvNames{i});
+        legend('original', 'transformed', 'optimized');
+        grid on
     end
 
 
@@ -433,14 +466,14 @@ end
 
 % an example cost function for trajectory optimization
 % for shape preservation in terms of the shape invariant descriptor
-function [cost, cost_array] = cost_shape_descriptor(pos_data, rvec_data, T0, linear_motion_invariant)
+function [cost, cost_array] = cost_shape_descriptor(pos_data, rvec_data, T0, pos_invariant_orig)
 
     % map the current position path into the invariants
     pos_diff_data = diff(pos_data');
     [pos_invariant, rot_invariant, pos_initial, rot_initial] = computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
 
     % compute reconstruction errors
-    cost = norm(abs(pos_invariant - linear_motion_invariant));
+    cost = norm(abs(pos_invariant - pos_invariant_orig));
 
     % disp(['Reconstruction errors in pose (RMSE): ' num2str(cost)])
 end
