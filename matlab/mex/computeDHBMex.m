@@ -1,3 +1,4 @@
+%#codegen
 %% Functions that implement the Denavit–Hartenberg inspired Bidirectional (DHB) invariant representation
 % See: D. Lee, R. Soloperto, and M. Saveriano, "Bidirectional invariant
 %      representation of rigid body motions and its application to gesture
@@ -16,6 +17,7 @@
 %        linear_frame_initial - Initial linear frame
 %        angular_frame_initial - Initial angular frame
 
+
 function [linear_motion_invariant, angular_motion_invariant, linear_frame_initial, angular_frame_initial] = computeDHB(position_diff, rotation_diff, method, initial_pose)
 
 [num_samples, ~] = size(rotation_diff);
@@ -29,7 +31,7 @@ linear_frame_y = computeFrameAxisY(linear_frame_x, linear_frame_x2, ...
         linear_frame_x(1)-linear_frame_x(2)]/norm([linear_frame_x(2)-linear_frame_x(3), ...
         linear_frame_x(3)-linear_frame_x(1), linear_frame_x(1)-linear_frame_x(2)]));
 linear_frame_z = cross(linear_frame_x,linear_frame_y);
-linear_frame_z = normalizeVector(linear_frame_z);
+linear_frame_z = linear_frame_z / norm(linear_frame_z);
 
 % Construct the initial linear frame
 linear_frame_initial = eye(4);
@@ -45,7 +47,7 @@ angular_frame_x = computeFrameAxisX(rotation_diff(1,:), [1 0 0]);
 angular_frame_x2 = computeFrameAxisX(rotation_diff(2,:), angular_frame_x);
 angular_frame_y = computeFrameAxisY(angular_frame_x, angular_frame_x2, [0 1 0]);
 angular_frame_z = cross(angular_frame_x,angular_frame_y);
-angular_frame_z = normalizeVector(angular_frame_z);
+angular_frame_z = angular_frame_z / norm(angular_frame_z);
 
 angular_frame_initial = eye(3);
 
@@ -111,3 +113,4 @@ function normalized_vector = normalizeVector(vector, default_vector)
         normalized_vector = default_vector;
     end
 end
+
