@@ -67,19 +67,16 @@ end
                                  
 % Compute DHB invariants
 
+pos_diff_data = diff(pos_data);
 % Compute position based DHB invariants
-[linear_motion_invariant, angular_motion_invariant, linear_frame_initial, angular_frame_initial] = computeDHBMex(pos_data, rvec_data, 'vel', T0);
-invariants_pos = [linear_motion_invariant, angular_motion_invariant];
+[pos_invariant, rot_invariant, linear_frame_initial, angular_frame_initial] = computeDHBMex(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
+invariants_pos = [pos_invariant, rot_invariant];
 
-
-% Reconstruct original trajectory
 % position
-[pr, rvec_r] = reconstructTrajectory(invariants_pos, linear_frame_initial, angular_frame_initial, 'vel');
+[pos_r_data, rvec_r_data] = reconstructTrajectoryMex(invariants_pos, linear_frame_initial, angular_frame_initial, 'pos');
 
-% Compute reconstruction errors
-
-%-- error with position
-errSP_pos = [(pr - pos_data(1:N-2,:)).^2 (rvec_r - rvec_data(1:N-2,:)).^2];
+% compute reconstruction errors
+errSP_pos = [(pos_r_data - pos_data(1:end-3,:)).^2 (rvec_r_data - rvec_data(1:end-3,:)).^2];
 
 % Compute rmse error
 err_pos = zeros(1,6);
@@ -89,5 +86,4 @@ end
 
 RMSE_pos = sqrt([sum(err_pos(1:3)) sum(err_pos(4:6))]./(N-2));
 disp(['Reconstruction errors in pose (RMSE): ' num2str(RMSE_pos)])
-
 
