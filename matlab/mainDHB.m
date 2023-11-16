@@ -7,7 +7,7 @@ clc
 
 %% Construct 6DOF trajectory
 dt = 0.1; % sample time
-tf = 4;   % total time 
+tf = 4;   % total time
 N = 1000; % number of samples
 
 t_data = linspace(0,tf,N)';
@@ -54,13 +54,13 @@ rvec_data = zeros(size(rot_data));
 for i = 1:size(rot_data, 1)
     % Extract the Euler angles for the i-th sample
     eul = rot_data(i, :);
-    
+
     % Convert Euler angles to rotation matrix
     rotm = eul2rotm(eul, 'ZYX'); % 'ZYX' is one of the most common sequences
-    
+
     % Convert the rotation matrix to axis-angle representation
     axang = rotm2axang(rotm);
-    
+
     % Convert axis-angle to rotation vector and store it
     rvec_data(i, :) = axang(4) * axang(1:3);
 end
@@ -77,15 +77,16 @@ for i=1:N-1
           0  -sin(roll(i))  cos(pitch(i))*cos(roll(i)) ];
 
     twists(i,1:3) = (Tr * orientRate(i,:)')';
-    
+
     a(i) = norm(twists(i,1:3));
 end
 
-                                 
+
 %% Compute DHB invariants
 
 % Compute position based DHB invariants
-[linear_motion_invariant, angular_motion_invariant, linear_frame_initial, angular_frame_initial] = computeDHB(pos_data, rvec_data, 'vel', T0);
+pos_diff_data = diff(pos_data);
+[linear_motion_invariant, angular_motion_invariant, linear_frame_initial, angular_frame_initial] = computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
 invariants_pos = [linear_motion_invariant, angular_motion_invariant];
 
 % Compute velocity based DHB invariants
@@ -98,7 +99,7 @@ figure('NumberTitle', 'off', 'Name', 'Cartesian pose to DHB');
 dhbInvNames = {'m_p' '\theta_p^1' '\theta_p^2' 'm_{\omega}' '\theta_{\omega}^1' '\theta_{\omega}^1'};
 for i=1:6
     subplot(2,3,i)
-    plot(t_data(1:end-2),invariants_pos(:,i),'k','LineWidth',2)
+    plot(t_data(1:end-3),invariants_pos(:,i),'LineWidth',2)
     ylabel(dhbInvNames{i});
     grid on
 end
@@ -107,14 +108,14 @@ figure('NumberTitle', 'off', 'Name', 'Cartesian velocity to DHB');
 dhbInvNames = {'m_v' '\theta_v^1' '\theta_v^2' 'm_{\omega}' '\theta_{\omega}^1' '\theta_{\omega}^1'};
 for i=1:6
     subplot(2,3,i)
-    plot(t_data(1:end-3),invariants_vel(:,i),'k','LineWidth',2)
+    plot(t_data(1:end-3),invariants_vel(:,i),'LineWidth',2)
     ylabel(dhbInvNames{i});
     grid on
 end
 
 %% Reconstruct original trajectory
 % position
-[pr, rvec_r] = reconstructTrajectory(invariants_pos, linear_frame_initial, angular_frame_initial, 'vel');
+[pr, rvec_r] = reconstructTrajectory(invariants_pos, linear_frame_initial, angular_frame_initial, 'pos');
 
 % velocity
 [vr, wr] = reconstructTrajectory(invariants_vel, linear_frame_initial_v, angular_frame_initial_v, 'vel');
@@ -122,7 +123,7 @@ end
 %% Compute reconstruction errors
 
 %-- error with position
-errSP_pos = [(pr - pos_data(1:N-2,:)).^2 (rvec_r - rvec_data(1:N-2,:)).^2];
+errSP_pos = [(pr - pos_data(1:N-3,:)).^2 (rvec_r - rvec_data(1:N-3,:)).^2];
 
 % Compute rmse error
 err_pos = zeros(1,6);
@@ -156,7 +157,7 @@ for i=1:6
     subplot(2,3,i)
     plot(t_data, pose_data(:,i),'g','LineWidth',4)
     hold on;
-    plot(t_data(1:end-2),pose_r_data(:,i),'b','LineWidth',2)        
+    plot(t_data(1:end-3),pose_r_data(:,i),'b','LineWidth',2)
     if(i<4)
         ylabel(['r_' num2str(i)])
     else
