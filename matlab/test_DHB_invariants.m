@@ -261,6 +261,7 @@ end
 
 %%% 11-14-23
 % 1) simple example of trajectory adaptation -- position only
+% 2) normalize the cost function for each parameter
 if (select_program == 2)
 
     %% Data Preparation
@@ -471,6 +472,7 @@ end
 
 % an example cost function for trajectory optimization
 % for shape preservation in terms of the shape invariant descriptor
+% with normalized cost per parameter distribution
 function [cost, cost_array] = cost_shape_descriptor(pos_data, rvec_data, T0, pos_invariant_orig)
 
     % map the current position path into the invariants
@@ -478,7 +480,7 @@ function [cost, cost_array] = cost_shape_descriptor(pos_data, rvec_data, T0, pos
     [pos_invariant, rot_invariant, pos_initial, rot_initial] = computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
 
     % compute reconstruction errors
-    cost = norm(abs(pos_invariant - pos_invariant_orig));
-
-    % disp(['Reconstruction errors in pose (RMSE): ' num2str(cost)])
+    error = abs(pos_invariant - pos_invariant_orig);
+    error_normalized = normalize(error, "range");
+    cost = norm(error_normalized);
 end
