@@ -1,6 +1,6 @@
 function [ opt_solution ] = tromp_run( algorithm_param, cost, init_pose, final_pose, traj_len, init_traj)
-% run TROMP algorithm 
-% this algorithm uses GRP as basis function to sample random trajectories. 
+% run TROMP algorithm
+% this algorithm uses GRP as basis function to sample random trajectories.
 
 %% initialization
 %= initialize the variables
@@ -39,8 +39,8 @@ if ~exist('init_traj','var')
     % if init trajectory is not provided, use GRP
     x_anchor = [init_pose'; init_pose'; final_pose'; final_pose'];
     grp1 = get_grp(t_anchor,x_anchor,t_test,l_anchor,l_test,...
-    kfun_str,hyp_mu,sig2w_mu,hyp_var,sig2w_var);
-    
+        kfun_str,hyp_mu,sig2w_mu,hyp_var,sig2w_var);
+
     %= Sample an initial trajectory
     out = sample_init_traj_grp(grp1, algorithm_param.init_sample_size, cost);
     init_traj = out.init_traj;
@@ -84,17 +84,17 @@ opt_traj_data = cell(max_iter,1);
 opt_traj_data{1} = init_traj;
 
 if (init_cost < 1e-5) % if the init cost is zero, then skip optimization
-    
+
     for iter = 2:max_iter
         opt_traj_data{iter} = opt_traj;
         learning_curve(iter) = opt_cost;
         running_time(iter) = toc;
     end
-    
+
 else
-    
+
     for iter = 2:max_iter
-        
+
         %= Sample paths
         delta_traj_data = cell(sample_size,1);
         sample_cost = zeros(1, sample_size);
@@ -111,7 +111,7 @@ else
             % compute cost
             sample_cost(i) = cost(sample_traj); % this takes second most time
         end
-        
+
         %= compute probabilities of samples and normalize them
         probs_tmp = zeros(1,sample_size);
         probs = probs_tmp;
@@ -119,9 +119,9 @@ else
         Smin = min(sample_cost);
         Sbar = (sample_cost - Smin)/(Smax-Smin);
         probs_tmp = exp(-h*Sbar);
-        probs = probs_tmp;        
+        probs = probs_tmp;
         probs = probs/sum(probs);
-        
+
         %= plotting delta traj
         if(0)
             figure(1); clf;
@@ -129,45 +129,47 @@ else
                 hold on; plot(delta_traj_data{i});
             end
         end
-        
+
         %= merge delta trajectories based on the probabilities
         delta_traj = zeros(joint_dim,traj_len);
         for i = 1:sample_size
             delta_traj = delta_traj + probs(i)*(delta_traj_data{i});
         end
-        
+
         %= plotting the merged delta traj
         if(0)
             figure(1); clf;
             plot(delta_traj)
         end
-        
+
         %= update the current trajectories with delta trajectories
         curr_traj = curr_traj + delta_traj;
         curr_cost = cost(curr_traj);
-        
+
         %= update optimal trajectory if the cost gets improved
         if opt_cost > curr_cost
             opt_cost = curr_cost;
             opt_traj = curr_traj;
-            
+
             % update grp mu with the new delta_traj
             if(update_grp_mean_traj)
                 grp2.mu = delta_traj';
             end
-            
+
             if quiet == 0
-                fprintf('[%d/%d]opt_cost is updated!:%.2f\n',iter,max_iter,opt_cost);
+                fprintf('[%d/%d]opt_cost is updated!:%.3f\n',iter,max_iter,opt_cost);
             end
         end
-        
+
         % store the information from the current iteration
         opt_traj_data{iter} = opt_traj;
         learning_curve(iter) = opt_cost;
         running_time(iter) = toc;
-        
+
         % if the current cost is zero, terminate the optimization
-        if (curr_cost < 1e-5)
+        early_termination_cond = curr_cost < 1e-5;
+        % TODO: if the change is minimal, terminate the optimization
+        if (early_termination_cond)
             for iterTmp = iter:max_iter
                 opt_traj_data{iterTmp} = opt_traj;
                 learning_curve(iterTmp) = opt_cost;
@@ -202,20 +204,20 @@ sample_cost_list = cell(sample_size,1);
 min_cost = 1e5;
 chol_K = chol(grp.K, 'lower');
 for i = 1:sample_size % for each samples
-    
+
     % sample a path
     sample_path_tmp = zeros(grp.n_test,grp.xdim);
     for d_idx = 1:grp.xdim % for each dimension
         sample_path_tmp(:,d_idx) = chol_K*randn(grp.n_test,1);
-%         sample_path_tmp(:,d_idx) = mvnrnd(zeros(grp.n_test,1),grp.K,1)';
+        %         sample_path_tmp(:,d_idx) = mvnrnd(zeros(grp.n_test,1),grp.K,1)';
     end
-    sample_path_tmp2 = sample_path_tmp + grp.mu;    
+    sample_path_tmp2 = sample_path_tmp + grp.mu;
     sample_path_list{i} = sample_path_tmp2;
-    
+
     % get current cost
     curr_cost_tmp = cost(sample_path_tmp2');
     sample_cost_list{i} = curr_cost_tmp;
-    
+
     % store the sample traj with the lowest cost
     if curr_cost_tmp < min_cost
         min_cost = curr_cost_tmp;
