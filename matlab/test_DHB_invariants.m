@@ -464,6 +464,7 @@ end
 %%% 11-16-23
 % 1) mexify the computeDHB method
 % 2) compare the data with the one from eFSI representation
+% 3) smooth the data a bit
 if (select_program == 3)
 
     %% Data Preparation
@@ -687,6 +688,214 @@ if (select_program == 3)
 
 end
 
+%%% Tue Nov 21 05:37:56 AM EST 2023
+% 1) update the cost function
+if (select_program == 4)
+
+    %% Data Preparation
+
+    % loading pose data, format: rows=samples, columns=x|y|z|qx|qy|qz|qw
+    % note: you can also use marker data together with the function markers2pose.m
+
+    load data/vive_data.mat
+    N = length(measured_pose_coordinates);
+    dt = 1/60; % timestep
+
+    % Convert quaternion to rotation matrix
+    pos_data = measured_pose_coordinates(:,2:4); % position
+    rotm_data = zeros(3,3,N);
+    T_data = zeros(4,4,N);
+    rvec_data = zeros(N, 3);
+    qt_data = zeros(N, 4);
+    for i=1:N
+        % [qw, qx, qy, qz]
+        pos = pos_data(i,:)';
+        qt = [measured_pose_coordinates(i,8), measured_pose_coordinates(i,5:7)];
+        rotm = quat2rotm(qt); % rotation matrix
+        angvec = rotm2axang(rotm); % angle and axis
+        rvec = angvec(4) * angvec(1:3); % rotation vector
+        T = [rotm, pos; 0 0 0 1];
+
+        % store the data
+        rotm_data(:,:,i) = rotm;
+        rvec_data(i, :) = rvec;
+        T_data(:,:,i) = T;
+        qt_data(i,:) = qt;
+    end
+
+    % Get the initial transform
+    T0 = [rotm_data(:,:,1) pos_data(1,:)'; 0 0 0 1];
+
+    % smooth the data a bit
+    pos_data_orig = pos_data;
+    pos_data_smooth = smoothdata(pos_data_orig, "sgolay", 5);
+    pos_data = pos_data_smooth;
+
+    % get the pos diff data
+    pos_diff_data = diff(pos_data_smooth);
+
+    % Compute position based DHB invariants
+    [pos_invariant_smooth, rot_invariant_smooth, linear_frame_initial, angular_frame_initial] = computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
+    invariants_pos_smooth = [pos_invariant_smooth, rot_invariant_smooth];
+
+    % Plot the invariants
+    figure('NumberTitle', 'off', 'Name', 'Cartesian pose to DHB');
+
+    dhbInvNames = {'m_p' '\theta_p^1' '\theta_p^2'};
+    for i=1:3
+        subplot(3,1,i)
+        plot(pos_invariant_orig(:,i),'LineWidth',2)
+        hold on;
+        plot(pos_invariant_smooth(:,i),'LineWidth',2)
+        ylabel(dhbInvNames{i});
+        legend('Original', 'Smoothed')
+        grid on
+    end
+
+    figure('NumberTitle', 'off', 'Name', 'Original Path with Smoothed Data');
+    plot3(pos_data_orig(1:N-3,1), pos_data_orig(1:N-3,2), pos_data_orig(1:N-3,3));
+    hold on;
+    plot3(pos_data_smooth(:,1), pos_data_smooth(:,2), pos_data_smooth(:,3));
+    legend('Original', 'Smoothed');
+    grid on;
+    view([-134.131 22.691]);
+
+    %% A simple 3D position target adaptation
+
+    % set a desired target location
+    pathsize = N-3;
+    goal_orig = pos_data(pathsize, :);
+    goal_offset = [-0.5, -1.5, 0.5];
+    % goal_offset = zeros(1,3);
+    goal_new = goal_orig + goal_offset;
+
+    % create an init trajectory with a simple transformation
+    pos_delta_data = SpatialRobotModel.jtraj(zeros(1,3), goal_offset, N);
+    init_traj = pos_data + pos_delta_data;
+
+    %%% generate a GRP path that connects the initial path to the new target and optimize it
+
+    Nframes = size(pos_data,1);
+
+    % set the seed
+    % rng(2423423);
+
+    % specify algorithms parameters
+    % h - sensitivity
+    % alpha - stepsize
+    algorithm_params = struct('sample_size',50,'max_iter',100,'h',1e1,'alpha',5e-1);
+    weights = [2 1 1 5];
+    weights = weights/norm(weights);
+
+    % run trajectory optimization
+    init_pose = pos_data(1, :)';
+    final_pose = goal_new';
+
+    % check the elapsed time
+
+    tic;
+    cost_fun = @(traj)cost_shape_descriptor_mex2(traj, rvec_data, T0, pos_invariant_orig, weights);
+    result = tromp_run(algorithm_params, cost_fun, init_pose, final_pose, Nframes, init_traj');
+    elapsed_time = toc;  % Capture the elapsed time
+
+    % Print out the elapsed time
+    fprintf('Elapsed time is %.6f seconds.\n', elapsed_time);
+
+    %%% plot the data comparing to the result with eFSI representation
+
+    % get the optimal trajectory
+    grp_traj = result.opt_traj';
+
+    % get the data from eFSI representation
+    load eFSI_result_231117.mat
+    eFSI_traj = optim_gen_result.Obj_location;
+
+    figure('NumberTitle', 'off', 'Name', 'Generalized Trajectory (DHB vs eFSI)');
+    plot3(pos_data(1:N-3,1), pos_data(1:N-3,2), pos_data(1:N-3,3));
+    hold on;
+    plot3(init_traj(:,1), init_traj(:,2), init_traj(:,3));
+    plot3(grp_traj(:,1), grp_traj(:,2), grp_traj(:,3));
+    plot3(eFSI_traj(:,1), eFSI_traj(:,2), eFSI_traj(:,3));
+
+    plot3(goal_orig(1), goal_orig(2), goal_orig(3), 'og');
+    plot3(goal_new(1), goal_new(2), goal_new(3), 'om');
+    legend('Original', 'Transformed', 'Optimized (GRP)', 'Optimized (eFSI)', 'Original Target', 'New Target');
+    grid on;
+    view([-134.131 22.691]);
+
+    %% compare the DHB invariants before and after optimization
+    % Compute DHB invariants for trajectory before optimization
+    [pos_invariant_before, rot_invariant_before, linear_frame_initial, angular_frame_initial] = computeDHB(diff(init_traj), rvec_data(1:end-1,:), 'pos', T0);
+
+    % Compute DHB invariants for trajectory after optimization
+    final_traj = result.opt_traj';
+    [pos_invariant_after, rot_invariant_after, linear_frame_initial, angular_frame_initial] = computeDHB(diff(final_traj), rvec_data(1:end-1,:), 'pos', T0);
+
+    % Compute DHB invariants for trajectory after optimization with eFSI
+    [pos_invariant_after2, rot_invariant_after2, linear_frame_initial, angular_frame_initial] = computeDHB(diff(eFSI_traj), rvec_data(1:end-1,:), 'pos', T0);
+
+    % Plot the invariants
+    figure('NumberTitle', 'off', 'Name', 'Cartesian pose to DHB');
+
+    dhbInvNames = {'m_p' '\theta_p^1' '\theta_p^2'};
+    for i=1:3
+        subplot(3,1,i)
+        plot(invariants_pos_orig(:,i))
+        hold on;
+        plot(pos_invariant_before(:,i))
+        plot(pos_invariant_after(:,i))
+        plot(pos_invariant_after2(:,i))
+        ylabel(dhbInvNames{i});
+        legend('original', 'transformed', 'optimized(GRP)', 'optimized(eFSI)');
+        grid on
+    end
+
+    %% reconstruct the data from eFSI
+    % position
+    [pos_r_tr_data, rvec_r_tr_data] = ...
+        reconstructTrajectory([pos_invariant_after2, rot_invariant_after2], ...
+        linear_frame_initial, angular_frame_initial, 'pos');
+
+    % Convert the rotation vector data into rotation matrix and
+    % reconstruct the transform data.
+    rotm_r_data = zeros(3, 3, N-3);
+    T_r_data = zeros(4, 4, N-3);
+    qt_r_data = zeros(N-3, 4);
+    for i=1:size(pos_invariant_after2,1)
+        p_r = pos_r_tr_data(i,:);
+        rvec_r = rvec_r_tr_data(i,:);
+        rotm_r = rotationVectorToMatrix(rvec_r)';
+        qt_r = rotm2quat(rotm_r);
+        T_r = [rotm_r, p_r'; 0 0 0 1];
+
+        rotm_r_data(:,:,i) = rotm_r;
+        T_r_data(:,:,i) = T_r;
+        qt_r_data(i, :) = qt_r;
+    end
+
+    % plot 3D trajectory
+
+    figure('NumberTitle', 'off', 'Name', 'Reconstructed Path with eFSI data');
+
+    % original path with starting at the origin
+    pos_data_temp = pos_data - pos_data(1,:);
+    plot3(pos_data_temp(1,1), pos_data_temp(1,2), pos_data_temp(1,3), 'o', 'MarkerSize', 10);
+    hold on;
+    plot3(pos_data_temp(1:N-3,1), pos_data_temp(1:N-3,2), pos_data_temp(1:N-3,3));
+    plotTransforms(pos_data_temp(1,:), qt_data(1,:), 'FrameSize', 0.05);
+    plotTransforms(pos_data_temp(end,:), qt_data(end,:), 'FrameSize', 0.05);
+
+    % reconstructed path starting at the origin
+    pos_r_tr_data = pos_r_tr_data - pos_r_tr_data(1,:);
+    plot3(pos_r_tr_data(:,1), pos_r_tr_data(:,2), pos_r_tr_data(:,3));
+    plot3(pos_r_tr_data(1,1), pos_r_tr_data(1,2), pos_r_tr_data(1,3), 'o', 'MarkerSize', 10);
+    plotTransforms(pos_r_tr_data(1,:), qt_r_data(1,:), 'FrameSize', 0.05);
+    plotTransforms(pos_r_tr_data(end,:), qt_r_data(end,:), 'FrameSize', 0.05);
+    grid on;
+
+
+end
+
 
 
 % a function that converts rotation vector data to quaternion vector data
@@ -704,7 +913,7 @@ end
 % an example cost function for trajectory optimization
 % for shape preservation in terms of the shape invariant descriptor
 % with normalized cost per parameter distribution
-function [cost, cost_array] = cost_shape_descriptor(pos_data, rvec_data, T0, pos_invariant_orig)
+function cost = cost_shape_descriptor(pos_data, rvec_data, T0, pos_invariant_orig)
 
     % map the current position path into the invariants
     pos_diff_data = diff(pos_data');
@@ -720,7 +929,7 @@ end
 % for shape preservation in terms of the shape invariant descriptor
 % with normalized cost per parameter distribution
 % with mexified computeDHB method
-function [cost, cost_array] = cost_shape_descriptor_mex(pos_data, rvec_data, T0, pos_invariant_orig, weights)
+function cost = cost_shape_descriptor_mex(pos_data, rvec_data, T0, pos_invariant_orig, weights)
 
     % map the current position path into the invariants
     pos_diff_data = diff(pos_data');
@@ -732,4 +941,30 @@ function [cost, cost_array] = cost_shape_descriptor_mex(pos_data, rvec_data, T0,
 
     % apply some weight for importance
     cost = norm(weights .* error_normalized);
+end
+
+% an example cost function for trajectory optimization
+% for shape preservation in terms of the shape invariant descriptor
+% with normalized cost per parameter distribution
+% with mexified computeDHB method
+% with additional cost of the length
+% with additional weights on the initial and final direction
+function cost = cost_shape_descriptor_mex2(pos_data, rvec_data, T0, pos_invariant_orig, weights)
+
+    % map the current position path into the invariants
+    pos_diff_data = diff(pos_data');
+    [pos_invariant, rot_invariant, pos_initial, rot_initial] = computeDHBMex_mex(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
+
+    % compute reconstruction errors
+    error = abs(pos_invariant - pos_invariant_orig);
+    error_normalized = normalize(error, "range");
+
+    % compute the length of the path
+    cost_path_length = weights(4) * norm(pos_invariant(:,1));
+
+    % construct the cost
+    cost_error = norm(weights(1:3) .* error_normalized);
+
+    % apply some weight for importance
+    cost = cost_error + cost_path_length;
 end
