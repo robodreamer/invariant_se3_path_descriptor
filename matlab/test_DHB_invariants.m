@@ -883,50 +883,6 @@ if (select_program == 4)
         grid on
     end
 
-    %% reconstruct the data from eFSI
-    % position
-    [pos_r_tr_data, rvec_r_tr_data] = ...
-        reconstructTrajectory([pos_invariant_after2, rot_invariant_after2], ...
-        linear_frame_initial, angular_frame_initial, 'pos');
-
-    % Convert the rotation vector data into rotation matrix and
-    % reconstruct the transform data.
-    rotm_r_data = zeros(3, 3, N-3);
-    T_r_data = zeros(4, 4, N-3);
-    qt_r_data = zeros(N-3, 4);
-    for i=1:size(pos_invariant_after2,1)
-        p_r = pos_r_tr_data(i,:);
-        rvec_r = rvec_r_tr_data(i,:);
-        rotm_r = rotationVectorToMatrix(rvec_r)';
-        qt_r = rotm2quat(rotm_r);
-        T_r = [rotm_r, p_r'; 0 0 0 1];
-
-        rotm_r_data(:,:,i) = rotm_r;
-        T_r_data(:,:,i) = T_r;
-        qt_r_data(i, :) = qt_r;
-    end
-
-    % plot 3D trajectory
-
-    figure('NumberTitle', 'off', 'Name', 'Reconstructed Path with eFSI data');
-
-    % original path with starting at the origin
-    pos_data_temp = pos_data - pos_data(1,:);
-    plot3(pos_data_temp(1,1), pos_data_temp(1,2), pos_data_temp(1,3), 'o', 'MarkerSize', 10);
-    hold on;
-    plot3(pos_data_temp(1:N-3,1), pos_data_temp(1:N-3,2), pos_data_temp(1:N-3,3));
-    plotTransforms(pos_data_temp(1,:), qt_data(1,:), 'FrameSize', 0.05);
-    plotTransforms(pos_data_temp(end,:), qt_data(end,:), 'FrameSize', 0.05);
-
-    % reconstructed path starting at the origin
-    pos_r_tr_data = pos_r_tr_data - pos_r_tr_data(1,:);
-    plot3(pos_r_tr_data(:,1), pos_r_tr_data(:,2), pos_r_tr_data(:,3));
-    plot3(pos_r_tr_data(1,1), pos_r_tr_data(1,2), pos_r_tr_data(1,3), 'o', 'MarkerSize', 10);
-    plotTransforms(pos_r_tr_data(1,:), qt_r_data(1,:), 'FrameSize', 0.05);
-    plotTransforms(pos_r_tr_data(end,:), qt_r_data(end,:), 'FrameSize', 0.05);
-    grid on;
-
-
 end
 
 
