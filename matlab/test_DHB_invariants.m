@@ -1,10 +1,7 @@
 %%% Testing the concept of DHB invariants
 % Andy Park, Nov 2023
 
-addpath(genpath(pwd));
-ccc;
-
-select_program = 3;
+select_program = 4;
 
 %%% 11-10-23
 % 1) show the invariance over affine transforms
@@ -13,6 +10,9 @@ select_program = 3;
 if (select_program == 1)
 
     %% Data Preparation
+
+    addpath(genpath(pwd));
+    ccc;
 
     % loading pose data, format: rows=samples, columns=x|y|z|qx|qy|qz|qw
     % note: you can also use marker data together with the function markers2pose.m
@@ -266,6 +266,9 @@ if (select_program == 2)
 
     %% Data Preparation
 
+    addpath(genpath(pwd));
+    ccc;
+
     % loading pose data, format: rows=samples, columns=x|y|z|qx|qy|qz|qw
     % note: you can also use marker data together with the function markers2pose.m
 
@@ -468,6 +471,9 @@ end
 if (select_program == 3)
 
     %% Data Preparation
+
+    addpath(genpath(pwd));
+    ccc;
 
     % loading pose data, format: rows=samples, columns=x|y|z|qx|qy|qz|qw
     % note: you can also use marker data together with the function markers2pose.m
@@ -690,9 +696,13 @@ end
 
 %%% Tue Nov 21 05:37:56 AM EST 2023
 % 1) update the cost function
+% 2) use a parameterized path
 if (select_program == 4)
 
     %% Data Preparation
+
+    addpath(genpath(pwd));
+    ccc;
 
     % loading pose data, format: rows=samples, columns=x|y|z|qx|qy|qz|qw
     % note: you can also use marker data together with the function markers2pose.m
@@ -700,6 +710,10 @@ if (select_program == 4)
     load data/vive_data.mat
     N = length(measured_pose_coordinates);
     dt = 1/60; % timestep
+
+    % get the data from eFSI representation
+    load eFSI_result_231117.mat
+    eFSI_traj_orig = optim_gen_result.Obj_location;
 
     % Convert quaternion to rotation matrix
     pos_data = measured_pose_coordinates(:,2:4); % position
@@ -726,39 +740,24 @@ if (select_program == 4)
     % Get the initial transform
     T0 = [rotm_data(:,:,1) pos_data(1,:)'; 0 0 0 1];
 
+    % resample the path -- 100 points
+    Nframes = 100;
+    timeNew = linspace(1, size(pos_data,1), Nframes);
+    pos_data = SpatialRobotModel.cubicInterp(pos_data, 1:N, timeNew);
+    rvec_data = SpatialRobotModel.cubicInterp(rvec_data, 1:N, timeNew);
+    eFSI_traj = SpatialRobotModel.cubicInterp(eFSI_traj_orig, 1:N, timeNew);
+    N = Nframes;
+
     % smooth the data a bit
     pos_data_orig = pos_data;
-    pos_data_smooth = smoothdata(pos_data_orig, "sgolay", 5);
-    pos_data = pos_data_smooth;
+    pos_data = smoothdata(pos_data, "sgolay", 10);
 
     % get the pos diff data
-    pos_diff_data = diff(pos_data_smooth);
+    pos_diff_data = diff(pos_data);
 
     % Compute position based DHB invariants
-    [pos_invariant_smooth, rot_invariant_smooth, linear_frame_initial, angular_frame_initial] = computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
-    invariants_pos_smooth = [pos_invariant_smooth, rot_invariant_smooth];
-
-    % Plot the invariants
-    figure('NumberTitle', 'off', 'Name', 'Cartesian pose to DHB');
-
-    dhbInvNames = {'m_p' '\theta_p^1' '\theta_p^2'};
-    for i=1:3
-        subplot(3,1,i)
-        plot(pos_invariant_orig(:,i),'LineWidth',2)
-        hold on;
-        plot(pos_invariant_smooth(:,i),'LineWidth',2)
-        ylabel(dhbInvNames{i});
-        legend('Original', 'Smoothed')
-        grid on
-    end
-
-    figure('NumberTitle', 'off', 'Name', 'Original Path with Smoothed Data');
-    plot3(pos_data_orig(1:N-3,1), pos_data_orig(1:N-3,2), pos_data_orig(1:N-3,3));
-    hold on;
-    plot3(pos_data_smooth(:,1), pos_data_smooth(:,2), pos_data_smooth(:,3));
-    legend('Original', 'Smoothed');
-    grid on;
-    view([-134.131 22.691]);
+    [pos_invariant, rot_invariant, linear_frame_initial, angular_frame_initial] = computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
+    invariants_pos = [pos_invariant, rot_invariant];
 
     %% A simple 3D position target adaptation
 
@@ -772,6 +771,7 @@ if (select_program == 4)
     % create an init trajectory with a simple transformation
     pos_delta_data = SpatialRobotModel.jtraj(zeros(1,3), goal_offset, N);
     init_traj = pos_data + pos_delta_data;
+    % init_traj = eFSI_traj;
 
     %%% generate a GRP path that connects the initial path to the new target and optimize it
 
@@ -784,7 +784,7 @@ if (select_program == 4)
     % h - sensitivity
     % alpha - stepsize
     algorithm_params = struct('sample_size',50,'max_iter',100,'h',1e1,'alpha',5e-1);
-    weights = [2 1 1 5];
+    weights = [2 1 1 2];  % the last weight for the path length
     weights = weights/norm(weights);
 
     % run trajectory optimization
@@ -794,7 +794,9 @@ if (select_program == 4)
     % check the elapsed time
 
     tic;
-    cost_fun = @(traj)cost_shape_descriptor_mex2(traj, rvec_data, T0, pos_invariant_orig, weights);
+    global quiet;
+    quiet = 0;
+    cost_fun = @(traj)cost_shape_descriptor_mex2(traj, rvec_data, T0, pos_invariant, weights);
     result = tromp_run(algorithm_params, cost_fun, init_pose, final_pose, Nframes, init_traj');
     elapsed_time = toc;  % Capture the elapsed time
 
@@ -805,10 +807,6 @@ if (select_program == 4)
 
     % get the optimal trajectory
     grp_traj = result.opt_traj';
-
-    % get the data from eFSI representation
-    load eFSI_result_231117.mat
-    eFSI_traj = optim_gen_result.Obj_location;
 
     figure('NumberTitle', 'off', 'Name', 'Generalized Trajectory (DHB vs eFSI)');
     plot3(pos_data(1:N-3,1), pos_data(1:N-3,2), pos_data(1:N-3,3));
@@ -840,7 +838,7 @@ if (select_program == 4)
     dhbInvNames = {'m_p' '\theta_p^1' '\theta_p^2'};
     for i=1:3
         subplot(3,1,i)
-        plot(invariants_pos_orig(:,i))
+        plot(invariants_pos(:,i))
         hold on;
         plot(pos_invariant_before(:,i))
         plot(pos_invariant_after(:,i))
