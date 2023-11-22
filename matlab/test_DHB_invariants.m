@@ -812,7 +812,7 @@ if (select_program == 4)
 
     tic;
     global quiet;
-    quiet = 0;
+    quiet = 1;
     cost_fun = @(traj)cost_shape_descriptor_mex2(traj, rvec_data, T0, pos_invariant, weights);
     result = tromp_run(algorithm_params, cost_fun, init_pose, final_pose, Nframes, init_traj');
     elapsed_time = toc;  % Capture the elapsed time
@@ -865,7 +865,7 @@ if (select_program == 4)
     [pos_invariant_after, rot_invariant_after, linear_frame_initial, angular_frame_initial] = computeDHB(diff(final_traj), rvec_data(1:end-1,:), 'pos', T0);
 
     % Compute DHB invariants for trajectory after optimization with eFSI
-    [pos_invariant_after2, rot_invariant_after2, linear_frame_initial, angular_frame_initial] = computeDHB(diff(eFSI_traj), rvec_data(1:end-1,:), 'pos', T0);
+    [pos_invariant_after2, rot_invariant_after2, linear_frame_initial, angular_frame_initial] = computeDHB(diff(eFSI_pos_traj), rvec_data(1:end-1,:), 'pos', T0);
 
     % Plot the invariants
     figure('NumberTitle', 'off', 'Name', 'Cartesian pose to DHB');
