@@ -696,7 +696,8 @@ end
 
 %%% Tue Nov 21 05:37:56 AM EST 2023
 % 1) update the cost function
-% 2) use a parameterized path
+% 2) use a resampled path
+% 3) use another plotting function for trajectory
 if (select_program == 4)
 
     %% Data Preparation
@@ -713,29 +714,30 @@ if (select_program == 4)
 
     % get the data from eFSI representation
     load eFSI_result_231117.mat
-    eFSI_traj_orig = optim_gen_result.Obj_location;
+    eFSI_pos_traj_orig = optim_gen_result.Obj_location;
+    eFSI_rot_traj_orig = optim_gen_result.Obj_frames;
 
     % Convert quaternion to rotation matrix
     pos_data = measured_pose_coordinates(:,2:4); % position
     rotm_data = zeros(3,3,N);
-    T_data = zeros(4,4,N);
     rvec_data = zeros(N, 3);
-    qt_data = zeros(N, 4);
+    rvec_eFSI_data = zeros(N,3);
     for i=1:N
         % [qw, qx, qy, qz]
         pos = pos_data(i,:)';
         qt = [measured_pose_coordinates(i,8), measured_pose_coordinates(i,5:7)];
         rotm = quat2rotm(qt); % rotation matrix
-        angvec = rotm2axang(rotm); % angle and axis
-        rvec = angvec(4) * angvec(1:3); % rotation vector
-        T = [rotm, pos; 0 0 0 1];
+        rvec = rotationMatrixToVector(rotm);
+
+        rotm_eFSI = eFSI_rot_traj_orig(:,:,i);
+        rvec_eFSI_data(i,:) = rotationMatrixToVector(rotm_eFSI);
 
         % store the data
         rotm_data(:,:,i) = rotm;
         rvec_data(i, :) = rvec;
-        T_data(:,:,i) = T;
-        qt_data(i,:) = qt;
     end
+    rotm_data_orig = rotm_data;
+    rvec_eFSI_data_orig = rvec_eFSI_data;
 
     % Get the initial transform
     T0 = [rotm_data(:,:,1) pos_data(1,:)'; 0 0 0 1];
@@ -745,12 +747,27 @@ if (select_program == 4)
     timeNew = linspace(1, size(pos_data,1), Nframes);
     pos_data = SpatialRobotModel.cubicInterp(pos_data, 1:N, timeNew);
     rvec_data = SpatialRobotModel.cubicInterp(rvec_data, 1:N, timeNew);
-    eFSI_traj = SpatialRobotModel.cubicInterp(eFSI_traj_orig, 1:N, timeNew);
+    eFSI_pos_traj = SpatialRobotModel.cubicInterp(eFSI_pos_traj_orig, 1:N, timeNew);
+    rvec_eFSI_data = SpatialRobotModel.cubicInterp(rvec_eFSI_data, 1:N, timeNew);
     N = Nframes;
+
+    % resize the data
+    rotm_data = zeros(3,3,N);
+    rotm_eFSI_data = zeros(3,3,N);
+    for i=1:N
+        rvec = rvec_data(i,:);
+        rotm = rotationVectorToMatrix(rvec)';
+        rotm_data(:,:,i) = rotm;
+
+        rvec_eFSI = rvec_eFSI_data(i,:);
+        rotm_eFSI = rotationVectorToMatrix(rvec_eFSI)';
+        rotm_eFSI_data(:,:,i) = rotm_eFSI;
+    end
+    eFSI_rot_traj = rotm_eFSI_data;
 
     % smooth the data a bit
     pos_data_orig = pos_data;
-    pos_data = smoothdata(pos_data, "sgolay", 10);
+    pos_data = smoothdata(pos_data, "sgolay", 5);
 
     % get the pos diff data
     pos_diff_data = diff(pos_data);
@@ -771,7 +788,7 @@ if (select_program == 4)
     % create an init trajectory with a simple transformation
     pos_delta_data = SpatialRobotModel.jtraj(zeros(1,3), goal_offset, N);
     init_traj = pos_data + pos_delta_data;
-    % init_traj = eFSI_traj;
+    % init_traj = eFSI_pos_traj;
 
     %%% generate a GRP path that connects the initial path to the new target and optimize it
 
@@ -808,18 +825,36 @@ if (select_program == 4)
     % get the optimal trajectory
     grp_traj = result.opt_traj';
 
-    figure('NumberTitle', 'off', 'Name', 'Generalized Trajectory (DHB vs eFSI)');
-    plot3(pos_data(1:N-3,1), pos_data(1:N-3,2), pos_data(1:N-3,3));
-    hold on;
-    plot3(init_traj(:,1), init_traj(:,2), init_traj(:,3));
-    plot3(grp_traj(:,1), grp_traj(:,2), grp_traj(:,3));
-    plot3(eFSI_traj(:,1), eFSI_traj(:,2), eFSI_traj(:,3));
+    select_plot_method = 2;
 
-    plot3(goal_orig(1), goal_orig(2), goal_orig(3), 'og');
-    plot3(goal_new(1), goal_new(2), goal_new(3), 'om');
-    legend('Original', 'Transformed', 'Optimized (GRP)', 'Optimized (eFSI)', 'Original Target', 'New Target');
-    grid on;
-    view([-134.131 22.691]);
+    if (select_plot_method == 1)
+        figure('NumberTitle', 'off', 'Name', 'Generalized Trajectory (DHB vs eFSI)');
+        plot3(pos_data(1:N-3,1), pos_data(1:N-3,2), pos_data(1:N-3,3));
+        hold on;
+        plot3(init_traj(:,1), init_traj(:,2), init_traj(:,3));
+        plot3(grp_traj(:,1), grp_traj(:,2), grp_traj(:,3));
+        plot3(eFSI_pos_traj(:,1), eFSI_pos_traj(:,2), eFSI_pos_traj(:,3));
+
+        plot3(goal_orig(1), goal_orig(2), goal_orig(3), 'og');
+        plot3(goal_new(1), goal_new(2), goal_new(3), 'om');
+        legend('Original', 'Transformed', 'Optimized (GRP)', 'Optimized (eFSI)', 'Original Target', 'New Target');
+        grid on;
+        view([-134.131 22.691]);
+
+    elseif (select_plot_method == 2)
+        % trajectory 1
+        grp_path = struct();
+        grp_path.pos_data = grp_traj;
+        grp_path.rot_data = rotm_data;
+
+        % trajectory 2
+        eFSI_path = struct();
+        eFSI_path.pos_data = eFSI_pos_traj;
+        eFSI_path.rot_data = eFSI_rot_traj;
+
+        plot_trajectory(grp_path, eFSI_path, 'Result with DHB-GRP (blue), Result with eFSI(red)', true);
+
+    end
 
     %% compare the DHB invariants before and after optimization
     % Compute DHB invariants for trajectory before optimization
