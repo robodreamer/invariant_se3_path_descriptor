@@ -1,7 +1,7 @@
 %%% Testing the concept of DHB invariants
 % Andy Park, Nov 2023
 
-select_program = 4;
+select_program = 5;
 
 %%% 11-10-23
 % 1) show the invariance over affine transforms
@@ -855,6 +855,317 @@ if (select_program == 4)
         plot_trajectory(grp_path, eFSI_path, 'Result with DHB-GRP (blue), Result with eFSI(red)', true);
 
     end
+
+    %% compare the DHB invariants before and after optimization
+    % Compute DHB invariants for trajectory before optimization
+    [pos_invariant_before, rot_invariant_before, linear_frame_initial, angular_frame_initial] = computeDHB(diff(init_traj), rvec_data(1:end-1,:), 'pos', T0);
+
+    % Compute DHB invariants for trajectory after optimization
+    final_traj = result.opt_traj';
+    [pos_invariant_after, rot_invariant_after, linear_frame_initial, angular_frame_initial] = computeDHB(diff(final_traj), rvec_data(1:end-1,:), 'pos', T0);
+
+    % Compute DHB invariants for trajectory after optimization with eFSI
+    [pos_invariant_after2, rot_invariant_after2, linear_frame_initial, angular_frame_initial] = computeDHB(diff(eFSI_pos_traj), rvec_data(1:end-1,:), 'pos', T0);
+
+    % Plot the invariants
+    figure('NumberTitle', 'off', 'Name', 'Cartesian pose to DHB');
+
+    dhbInvNames = {'m_p' '\theta_p^1' '\theta_p^2'};
+    for i=1:3
+        subplot(3,1,i)
+        plot(invariants_pos(:,i))
+        hold on;
+        plot(pos_invariant_before(:,i))
+        plot(pos_invariant_after(:,i))
+        plot(pos_invariant_after2(:,i))
+        ylabel(dhbInvNames{i});
+        legend('original', 'transformed', 'optimized(GRP)', 'optimized(eFSI)');
+        grid on
+    end
+
+end
+
+%%% Mon Nov 27 05:18:09 AM EST 2023
+% 1) try using an OCP approach to solve trajectory adaptation problem
+if (select_program == 5)
+
+    %% Data Preparation
+
+    addpath(genpath(pwd));
+    ccc;
+
+    % loading pose data, format: rows=samples, columns=x|y|z|qx|qy|qz|qw
+    % note: you can also use marker data together with the function markers2pose.m
+
+    load data/vive_data.mat
+    N = length(measured_pose_coordinates);
+    dt = 1/60; % timestep
+
+    % get the data from eFSI representation
+    load eFSI_result_231117.mat
+    eFSI_pos_traj_orig = optim_gen_result.Obj_location;
+    eFSI_rot_traj_orig = optim_gen_result.Obj_frames;
+
+    % Convert quaternion to rotation matrix
+    pos_data = measured_pose_coordinates(:,2:4); % position
+    rotm_data = zeros(3,3,N);
+    rvec_data = zeros(N, 3);
+    rvec_eFSI_data = zeros(N,3);
+    for i=1:N
+        % [qw, qx, qy, qz]
+        pos = pos_data(i,:)';
+        qt = [measured_pose_coordinates(i,8), measured_pose_coordinates(i,5:7)];
+        rotm = quat2rotm(qt); % rotation matrix
+        rvec = rotationMatrixToVector(rotm);
+
+        rotm_eFSI = eFSI_rot_traj_orig(:,:,i);
+        rvec_eFSI_data(i,:) = rotationMatrixToVector(rotm_eFSI);
+
+        % store the data
+        rotm_data(:,:,i) = rotm;
+        rvec_data(i, :) = rvec;
+    end
+    rotm_data_orig = rotm_data;
+    rvec_eFSI_data_orig = rvec_eFSI_data;
+
+    % Get the initial transform
+    T0 = [rotm_data(:,:,1) pos_data(1,:)'; 0 0 0 1];
+
+    % resample the path -- 50 points
+    Nframes = 50;
+    timeNew = linspace(1, size(pos_data,1), Nframes);
+    pos_data = SpatialRobotModel.cubicInterp(pos_data, 1:N, timeNew);
+    rvec_data = SpatialRobotModel.cubicInterp(rvec_data, 1:N, timeNew);
+    eFSI_pos_traj = SpatialRobotModel.cubicInterp(eFSI_pos_traj_orig, 1:N, timeNew);
+    rvec_eFSI_data = SpatialRobotModel.cubicInterp(rvec_eFSI_data, 1:N, timeNew);
+    N_orig = Nframes;
+    N = N_orig;
+
+    % resize the data
+    rotm_data = zeros(3,3,N);
+    rotm_eFSI_data = zeros(3,3,N);
+    for i=1:N
+        rvec = rvec_data(i,:);
+        rotm = rotationVectorToMatrix(rvec)';
+        rotm_data(:,:,i) = rotm;
+
+        rvec_eFSI = rvec_eFSI_data(i,:);
+        rotm_eFSI = rotationVectorToMatrix(rvec_eFSI)';
+        rotm_eFSI_data(:,:,i) = rotm_eFSI;
+    end
+    eFSI_rot_traj = rotm_eFSI_data;
+
+    % smooth the data a bit
+    pos_data_orig = pos_data;
+    pos_data = smoothdata(pos_data, "sgolay", 5);
+
+    % get the pos diff data
+    pos_diff_data = diff(pos_data);
+
+    % Compute position based DHB invariants
+    [pos_invariant, rot_invariant, linear_frame_initial, angular_frame_initial] = computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
+    path_invariants = [pos_invariant, rot_invariant];
+
+    %% Trajectory adaptation with GRP
+
+    if 0
+
+        % set a desired target location
+        pathsize = N-3;
+        goal_orig = pos_data(pathsize, :);
+        goal_offset = [-0.5, -1.5, 0.5];
+        % goal_offset = zeros(1,3);
+        goal_new = goal_orig + goal_offset;
+
+        % create an init trajectory with a simple transformation
+        pos_delta_data = SpatialRobotModel.jtraj(zeros(1,3), goal_offset, N);
+        init_traj = pos_data + pos_delta_data;
+        % init_traj = eFSI_pos_traj;
+
+        %%% generate a GRP path that connects the initial path to the new target and optimize it
+
+        Nframes = size(pos_data,1);
+
+        % set the seed
+        % rng(2423423);
+
+        % specify algorithms parameters
+        % h - sensitivity
+        % alpha - stepsize
+        algorithm_params = struct('sample_size',50,'max_iter',100,'h',1e1,'alpha',5e-1);
+        weights = [2 1 1 2];  % the last weight for the path length
+        weights = weights/norm(weights);
+
+        % run trajectory optimization
+        init_pose = pos_data(1, :)';
+        final_pose = goal_new';
+
+        % check the elapsed time
+
+        tic;
+        global quiet;
+        quiet = 1;
+        cost_fun = @(traj)cost_shape_descriptor_mex2(traj, rvec_data, T0, pos_invariant, weights);
+        result = tromp_run(algorithm_params, cost_fun, init_pose, final_pose, Nframes, init_traj');
+        elapsed_time = toc;  % Capture the elapsed time
+
+        % Print out the elapsed time
+        fprintf('Elapsed time is %.6f seconds.\n', elapsed_time);
+
+        %%% plot the data comparing to the result with eFSI representation
+
+        % get the optimal trajectory
+        grp_traj = result.opt_traj';
+
+        select_plot_method = 2;
+
+        if (select_plot_method == 1)
+            figure('NumberTitle', 'off', 'Name', 'Generalized Trajectory (DHB vs eFSI)');
+            plot3(pos_data(1:N-3,1), pos_data(1:N-3,2), pos_data(1:N-3,3));
+            hold on;
+            plot3(init_traj(:,1), init_traj(:,2), init_traj(:,3));
+            plot3(grp_traj(:,1), grp_traj(:,2), grp_traj(:,3));
+            plot3(eFSI_pos_traj(:,1), eFSI_pos_traj(:,2), eFSI_pos_traj(:,3));
+
+            plot3(goal_orig(1), goal_orig(2), goal_orig(3), 'og');
+            plot3(goal_new(1), goal_new(2), goal_new(3), 'om');
+            legend('Original', 'Transformed', 'Optimized (GRP)', 'Optimized (eFSI)', 'Original Target', 'New Target');
+            grid on;
+            view([-134.131 22.691]);
+
+        elseif (select_plot_method == 2)
+            % trajectory 1
+            grp_path = struct();
+            grp_path.pos_data = grp_traj;
+            grp_path.rot_data = rotm_data;
+
+            % trajectory 2
+            eFSI_path = struct();
+            eFSI_path.pos_data = eFSI_pos_traj;
+            eFSI_path.rot_data = eFSI_rot_traj;
+
+            plot_trajectory(grp_path, eFSI_path, 'Result with DHB-GRP (blue), Result with eFSI(red)', true);
+
+        end
+
+    end
+
+    %% Try trajectory adaptation with OCP
+
+    N = N_orig - 3;
+
+    % set a desired target location
+    goal_orig = pos_data(N, :);
+    goal_offset = [-0.5, -1.5, 0.5];
+    % goal_offset = zeros(1,3);
+    goal_new = goal_orig + goal_offset;
+
+    %%% construct an ocp with casadi
+
+    % Import statement that loads the Casadi module with its functions
+    import casadi.*
+    clc;
+
+    % Initial values
+    init_traj = [pos_data(1:N, :), rvec_data(1:N, :)];
+    invariants_demo = path_invariants;
+    p_frame_init = linear_frame_initial;
+    R_frame_init = angular_frame_initial;
+
+    % constraints
+    constraints = struct();
+    constraints.start_pose = init_traj(1,:);
+    constraints.target_pose = [goal_new, rvec_data(N,:)];
+
+    % Define system states
+    p_DHB = SX.sym('p_DHB', N, 3); % position
+    rvec_DHB = SX.sym('rvec_DHB', N, 3); % rotation vector
+    x = [p_DHB(:); rvec_DHB(:)];
+
+    % Define system controls (invariants)
+    i1 = SX.sym('i1', N, 1); % object translation speed
+    i2 = SX.sym('i2', N, 1); % translational theta 1
+    i3 = SX.sym('i3', N, 1); % translational theta 2
+    i4 = SX.sym('i4', N, 1); % object rotational speed
+    i5 = SX.sym('i5', N, 1); % rotational theta 1
+    i6 = SX.sym('i6', N, 1); % rotational theta 2
+    u = [i1 i2 i3 i4 i5 i6];
+
+    % Define reconstruction function for DHB
+    % This part needs more work.
+    [pos_r_data, rvec_r_data] = reconstructTrajectoryCasadi(u, p_frame_init, R_frame_init, 'pos');
+    out_plus1 = [pos_r_data rvec_r_data];
+    integr2 = Function('phi', {u}, {out_plus1});
+
+    %===================================================================
+    % Build the non-linear optimization problem (NLP) from start to end
+    %===================================================================
+    opti = casadi.Opti();
+
+    % Create decision variables and parameters for multipleshooting
+
+    % System states
+    p_DHB_var = opti.variable(N,3); % position
+    rvec_DHB_var  = opti.variable(N,3); % rotation vector
+
+    X =  [p_DHB_var rvec_DHB_var];
+
+    U = opti.variable(N, 6);
+    % opti.subject_to(U(1,:)>=0); % lower bounds on control
+    % opti.subject_to(U(4,:)>=0); % lower bounds on control
+
+    % Constraints on the start pose
+    opti.subject_to(p_DHB_var(1,:) == constraints.start_pose(1:3));
+    opti.subject_to(rvec_DHB_var(1,:) == constraints.start_pose(4:6));
+
+    % constraints on the end pose
+    opti.subject_to(p_DHB_var(end,:) == constraints.target_pose(1:3));
+    opti.subject_to(rvec_DHB_var(end,:) == constraints.target_pose(4:6));
+
+    % Dynamic constraints
+    % Integrate current state to obtain next state
+    X_recon = integr2(U);
+
+    % Gap closing constraint
+    opti.subject_to(X_recon==X);
+
+    %-- construct objective
+
+    % define the weights (first 6 elements correspond to the invariants)
+    weights = [1, 1, 1, 1, 1, 1, 1];
+
+    % compute reconstruction errors
+    error = abs(U - invariants_demo);
+    error_normalized = error;
+    % error_normalized = normalize(error, "range");
+
+    % compute the length of the path
+    cost_path_length = weights(7) * norm(pos_invariant(:,1));
+
+    % construct the cost
+    objective = norm(weights(1:6) * error_normalized');
+
+    % Initialize states + controls
+    for k=1:N
+        opti.set_initial(p_DHB_var(k,:), init_traj(k,1:3));
+        opti.set_initial(rvec_DHB_var(k,:), init_traj(k,4:6));
+    end
+    for k=1:size(invariants_demo,1)
+        opti.set_initial(U(k,:), invariants_demo(k,:));
+    end
+
+    opti.minimize(objective);
+    opti.solver('ipopt',struct(),struct('tol',1e-5));
+
+    % Solve the NLP
+    sol = opti.solve();
+    sol.value(U);
+
+    % Get the results
+    optim_result = struct();
+    optim_result.pos_data = sol.value(p_DHB_var);
+    optim_result.rvec_data = sol.value(rvec_DHB_var);
+    optim_result.invariants = sol.value(U);
 
     %% compare the DHB invariants before and after optimization
     % Compute DHB invariants for trajectory before optimization
