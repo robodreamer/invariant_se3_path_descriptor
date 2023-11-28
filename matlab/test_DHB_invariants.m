@@ -967,99 +967,57 @@ if (select_program == 5)
     [pos_invariant, rot_invariant, linear_frame_initial, angular_frame_initial] = computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
     path_invariants = [pos_invariant, rot_invariant];
 
-    %% Trajectory adaptation with GRP
-
-    if 0
-
-        % set a desired target location
-        pathsize = N-3;
-        goal_orig = pos_data(pathsize, :);
-        goal_offset = [-0.5, -1.5, 0.5];
-        % goal_offset = zeros(1,3);
-        goal_new = goal_orig + goal_offset;
-
-        % create an init trajectory with a simple transformation
-        pos_delta_data = SpatialRobotModel.jtraj(zeros(1,3), goal_offset, N);
-        init_traj = pos_data + pos_delta_data;
-        % init_traj = eFSI_pos_traj;
-
-        %%% generate a GRP path that connects the initial path to the new target and optimize it
-
-        Nframes = size(pos_data,1);
-
-        % set the seed
-        % rng(2423423);
-
-        % specify algorithms parameters
-        % h - sensitivity
-        % alpha - stepsize
-        algorithm_params = struct('sample_size',50,'max_iter',100,'h',1e1,'alpha',5e-1);
-        weights = [2 1 1 2];  % the last weight for the path length
-        weights = weights/norm(weights);
-
-        % run trajectory optimization
-        init_pose = pos_data(1, :)';
-        final_pose = goal_new';
-
-        % check the elapsed time
-
-        tic;
-        global quiet;
-        quiet = 1;
-        cost_fun = @(traj)cost_shape_descriptor_mex2(traj, rvec_data, T0, pos_invariant, weights);
-        result = tromp_run(algorithm_params, cost_fun, init_pose, final_pose, Nframes, init_traj');
-        elapsed_time = toc;  % Capture the elapsed time
-
-        % Print out the elapsed time
-        fprintf('Elapsed time is %.6f seconds.\n', elapsed_time);
-
-        %%% plot the data comparing to the result with eFSI representation
-
-        % get the optimal trajectory
-        grp_traj = result.opt_traj';
-
-        select_plot_method = 2;
-
-        if (select_plot_method == 1)
-            figure('NumberTitle', 'off', 'Name', 'Generalized Trajectory (DHB vs eFSI)');
-            plot3(pos_data(1:N-3,1), pos_data(1:N-3,2), pos_data(1:N-3,3));
-            hold on;
-            plot3(init_traj(:,1), init_traj(:,2), init_traj(:,3));
-            plot3(grp_traj(:,1), grp_traj(:,2), grp_traj(:,3));
-            plot3(eFSI_pos_traj(:,1), eFSI_pos_traj(:,2), eFSI_pos_traj(:,3));
-
-            plot3(goal_orig(1), goal_orig(2), goal_orig(3), 'og');
-            plot3(goal_new(1), goal_new(2), goal_new(3), 'om');
-            legend('Original', 'Transformed', 'Optimized (GRP)', 'Optimized (eFSI)', 'Original Target', 'New Target');
-            grid on;
-            view([-134.131 22.691]);
-
-        elseif (select_plot_method == 2)
-            % trajectory 1
-            grp_path = struct();
-            grp_path.pos_data = grp_traj;
-            grp_path.rot_data = rotm_data;
-
-            % trajectory 2
-            eFSI_path = struct();
-            eFSI_path.pos_data = eFSI_pos_traj;
-            eFSI_path.rot_data = eFSI_rot_traj;
-
-            plot_trajectory(grp_path, eFSI_path, 'Result with DHB-GRP (blue), Result with eFSI(red)', true);
-
-        end
-
-    end
-
-    %% Try trajectory adaptation with OCP
-
+    % transform the goal position
     N = N_orig - 3;
 
     % set a desired target location
     goal_orig = pos_data(N, :);
     goal_offset = [-0.5, -0.5, 0.5];
-    % goal_offset = zeros(1,3);
     goal_new = goal_orig + goal_offset;
+
+    %% Trajectory adaptation with GRP
+
+    % create an init trajectory with a simple transformation
+    pos_delta_data = SpatialRobotModel.jtraj(zeros(1,3), goal_offset, N_orig);
+    init_traj = pos_data + pos_delta_data;
+    % init_traj = eFSI_pos_traj;
+
+    %%% generate a GRP path that connects the initial path to the new target and optimize it
+
+    Nframes = size(pos_data,1);
+
+    % set the seed
+    % rng(2423423);
+
+    % specify algorithms parameters
+    % h - sensitivity
+    % alpha - stepsize
+    algorithm_params = struct('sample_size',50,'max_iter',100,'h',1e1,'alpha',5e-1);
+    weights = [2 1 1 2];  % the last weight for the path length
+    weights = weights/norm(weights);
+
+    % run trajectory optimization
+    init_pose = pos_data(1, :)';
+    final_pose = goal_new';
+
+    % check the elapsed time
+
+    tic;
+    global quiet;
+    quiet = 1;
+    cost_fun = @(traj)cost_shape_descriptor_mex2(traj, rvec_data, T0, pos_invariant, weights);
+    result = tromp_run(algorithm_params, cost_fun, init_pose, final_pose, Nframes, init_traj');
+    elapsed_time = toc;  % Capture the elapsed time
+
+    % Print out the elapsed time
+    fprintf('Elapsed time is %.6f seconds.\n', elapsed_time);
+
+    %%% plot the data comparing to the result with eFSI representation
+
+    % get the optimal trajectory
+    grp_traj = result.opt_traj';
+
+    %% Try trajectory adaptation with OCP
 
     %%% construct an ocp with casadi
 
@@ -1179,11 +1137,18 @@ if (select_program == 5)
 
     % trajectory 2
     path_second = struct();
-    path_second.pos_data = pos_r_opt_data;
-    path_second.rot_data = rotm_r_opt_data;
+    path_second.pos_data = grp_traj;
+    path_second.rot_data = rotm_data;
 
-    plot_trajectory(path_first, path_second, 'The initial Traj, Result with Casadi', true);
+    % trajectory 3
+    path_third = struct();
+    path_third.pos_data = pos_r_opt_data;
+    path_third.rot_data = rotm_r_opt_data;
 
+    path_data = {path_first, path_second, path_third};
+    color_data = {[0 0 255]/255, [0 255 0]/255, [255 0 0]/255};
+
+    plot_se3_trajectories(path_data, color_data, 'The initial Traj (blue), Result with GRP (green), Result with Casadi (red)', true);
 
 end
 
