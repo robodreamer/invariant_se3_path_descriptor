@@ -13,62 +13,26 @@
 %        trajectory_position - Position or linear velocity trajectory ([N-2]x3 array)
 %        trajectory_rotation - Relative rotation vector or angular velocity trajectory ([N-2]x3 array)
 
-function [trajectory_position, trajectory_rotation] = reconstructTrajectory(dhb_invariants, initial_linear_frame, initial_angular_frame, method)
-
-    linear_magnitude = dhb_invariants(:,1);
-    linear_angle_y = dhb_invariants(:,2);
-    linear_angle_x = dhb_invariants(:,3);
-    angular_magnitude = dhb_invariants(:,4);
-    angular_angle_y = dhb_invariants(:,5);
-    angular_angle_x = dhb_invariants(:,6);
+function [trajectory_position, trajectory_rotation] = reconstructTrajectoryCasadi(dhb_invariants, initial_linear_frame, initial_angular_frame, method)
 
     num_samples = size(dhb_invariants,1);
 
     % Use CasADi SX or MX for trajectory arrays
     trajectory_position = casadi.SX.zeros(num_samples,3);
     trajectory_rotation = casadi.SX.zeros(num_samples,3);
-
-    position_mode = strcmp(method, 'pos');
+    % trajectory_position = zeros(num_samples,3);
+    % trajectory_rotation = zeros(num_samples,3);
 
     % Initialize frames as CasADi symbolic expressions
     linear_frame = initial_linear_frame;
     angular_frame = initial_angular_frame;
 
     for i = 1:num_samples
-        if position_mode
-            trajectory_position(i,:) = linear_frame(1:3,4)';
-        end
+        % Call the single step reconstruction for each row of invariants
+        [linear_frame, angular_frame, new_position, new_rotation] = reconstructTrajectorySingleStep(dhb_invariants(i,:), linear_frame, angular_frame, method);
 
-        % Compute rotation matrices for the position or velocity
-        rotation_matrix_position = rotateY(linear_angle_y(i)) * rotateX(linear_angle_x(i));
-        translation_vector = [linear_magnitude(i); 0; 0];
-        transformation_matrix = [rotation_matrix_position, translation_vector; 0, 0, 0, position_mode];
-        linear_frame = linear_frame * transformation_matrix;
-
-        % Only update the position if we're dealing with velocities
-        if ~position_mode
-            trajectory_position(i,:) = linear_frame(1:3,4)';
-        end
-
-        % Apply the rotation to the angular frame and update the rotation trajectory
-        trajectory_rotation(i,:) = (angular_frame * [angular_magnitude(i); 0; 0])';
-        rotation_matrix_rotation = rotateY(angular_angle_y(i)) * rotateX(angular_angle_x(i));
-        angular_frame = angular_frame * rotation_matrix_rotation;
+        % Store the position and rotation in the trajectory arrays
+        trajectory_position(i,:) = new_position;
+        trajectory_rotation(i,:) = new_rotation;
     end
-end
-
-%% Elementary rotation around the x-axis
-% phi - Angle to rotate about the x-axis
-function rotation_matrix = rotateX(phi)
-    rotation_matrix = [1        0         0; ...
-                       0 cos(phi) -sin(phi); ...
-                       0 sin(phi)  cos(phi)];
-end
-
-%% Elementary rotation around the y-axis
-% beta - Angle to rotate about the y-axis
-function rotation_matrix = rotateY(beta)
-    rotation_matrix = [cos(beta) 0 sin(beta); ...
-                       0         1         0; ...
-                      -sin(beta) 0 cos(beta)];
 end

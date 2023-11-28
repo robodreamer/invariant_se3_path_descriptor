@@ -70,6 +70,7 @@ if (select_program == 1)
 
     % position
     [pos_r_data, rvec_r_data] = reconstructTrajectory(invariants_pos, linear_frame_initial, angular_frame_initial, 'pos');
+    % [pos_r_data, rvec_r_data] = reconstructTrajectoryCasadi(invariants_pos, linear_frame_initial, angular_frame_initial, 'pos');
 
     % compute reconstruction errors
     errSP_pos = [(pos_r_data - pos_data(1:end-3,:)).^2 (rvec_r_data - rvec_data(1:end-3,:)).^2];
@@ -1066,6 +1067,8 @@ if (select_program == 5)
     import casadi.*
     clc;
 
+    opti = casadi.Opti();
+
     % Initial values
     init_traj = [pos_data(1:N, :), rvec_data(1:N, :)];
     invariants_demo = path_invariants;
@@ -1078,105 +1081,73 @@ if (select_program == 5)
     constraints.target_pose = [goal_new, rvec_data(N,:)];
 
     % Define system states
-    p_DHB = SX.sym('p_DHB', N, 3); % position
-    rvec_DHB = SX.sym('rvec_DHB', N, 3); % rotation vector
-    x = [p_DHB(:); rvec_DHB(:)];
+    p_DHB_var = cell(1,N);
+    rvec_DHB_var = cell(1,N);
+    U_var = cell(1,N);
 
-    % Define system controls (invariants)
-    i1 = SX.sym('i1', N, 1); % object translation speed
-    i2 = SX.sym('i2', N, 1); % translational theta 1
-    i3 = SX.sym('i3', N, 1); % translational theta 2
-    i4 = SX.sym('i4', N, 1); % object rotational speed
-    i5 = SX.sym('i5', N, 1); % rotational theta 1
-    i6 = SX.sym('i6', N, 1); % rotational theta 2
-    u = [i1 i2 i3 i4 i5 i6];
-
-    % Define reconstruction function for DHB
-    % This part needs more work.
-    [pos_r_data, rvec_r_data] = reconstructTrajectoryCasadi(u, p_frame_init, R_frame_init, 'pos');
-    out_plus1 = [pos_r_data rvec_r_data];
-    integr2 = Function('phi', {u}, {out_plus1});
-
-    %===================================================================
-    % Build the non-linear optimization problem (NLP) from start to end
-    %===================================================================
-    opti = casadi.Opti();
-
-    % Create decision variables and parameters for multipleshooting
-
-    % System states
-    p_DHB_var = opti.variable(N,3); % position
-    rvec_DHB_var  = opti.variable(N,3); % rotation vector
-
-    X =  [p_DHB_var rvec_DHB_var];
-
-    U = opti.variable(N, 6);
-    % opti.subject_to(U(1,:)>=0); % lower bounds on control
-    % opti.subject_to(U(4,:)>=0); % lower bounds on control
-
-    % Constraints on the start pose
-    opti.subject_to(p_DHB_var(1,:) == constraints.start_pose(1:3));
-    opti.subject_to(rvec_DHB_var(1,:) == constraints.start_pose(4:6));
-
-    % constraints on the end pose
-    opti.subject_to(p_DHB_var(end,:) == constraints.target_pose(1:3));
-    opti.subject_to(rvec_DHB_var(end,:) == constraints.target_pose(4:6));
-
-    % Dynamic constraints
-    % Integrate current state to obtain next state
-    X_recon = integr2(U);
-
-    % Gap closing constraint
-    opti.subject_to(X_recon==X);
-
-    %-- construct objective
-
-    % define the weights (first 6 elements correspond to the invariants)
-    weights = [1, 1, 1, 1, 1, 1, 1];
-
-    % compute reconstruction errors
-    error = abs(U - invariants_demo);
-    error_normalized = error;
-    % error_normalized = normalize(error, "range");
-
-    % compute the length of the path
-    cost_path_length = weights(7) * norm(pos_invariant(:,1));
-
-    % construct the cost
-    objective = norm(weights(1:6) * error_normalized');
-
-    % Initialize states + controls
     for k=1:N
-        opti.set_initial(p_DHB_var(k,:), init_traj(k,1:3));
-        opti.set_initial(rvec_DHB_var(k,:), init_traj(k,4:6));
+        p_DHB_var{k} = opti.variable(1,3); % position
+        rvec_DHB_var{k} = opti.variable(1,3); % rotation vector
+        U_var{k} = opti.variable(1, 6);
     end
-    for k=1:size(invariants_demo,1)
-        opti.set_initial(U(k,:), invariants_demo(k,:));
+
+    % Initialize linear and angular frames
+    linear_frame = p_frame_init;
+    angular_frame = R_frame_init;
+
+    % Apply dynamic constraints using the single step method
+    for k = 1:N-1
+        [new_linear_frame, new_angular_frame, new_position, new_rotation] = ...
+            reconstructTrajectorySingleStep(U_var{k}, linear_frame, angular_frame, 'pos');
+
+        % Update frames for next iteration
+        linear_frame = new_linear_frame;
+        angular_frame = new_angular_frame;
+
+        % Set the dynamic constraints
+        opti.subject_to(p_DHB_var{k+1} == new_position);
+        opti.subject_to(rvec_DHB_var{k+1} == new_rotation);
+    end
+
+    % Constraints on the start and end pose
+    opti.subject_to(p_DHB_var{1} == constraints.start_pose(1:3));
+    opti.subject_to(rvec_DHB_var{1} == constraints.start_pose(4:6));
+    opti.subject_to(p_DHB_var{end} == constraints.target_pose(1:3));
+    opti.subject_to(rvec_DHB_var{end} == constraints.target_pose(4:6));
+
+    % Construct objective
+    weights = [1, 1, 1, 1, 1, 1]';
+    % Construct objective
+    objective = 0;
+    for k=1:N
+        e = U_var{k} - invariants_demo(k,:); % invariants error
+        e_weighted = sqrt(weights).*e';
+        objective = objective + e_weighted'*e_weighted;
+    end
+
+    % Initialize states and controls
+    for k=1:N
+        opti.set_initial(p_DHB_var{k}, init_traj(k,1:3));
+        opti.set_initial(rvec_DHB_var{k}, init_traj(k,4:6));
+        opti.set_initial(U_var{k}, invariants_demo(k,:));
     end
 
     opti.minimize(objective);
-    opti.solver('ipopt',struct(),struct('tol',1e-5));
+    opti.solver('ipopt', struct(), struct('tol', 1e-5));
 
-    % Solve the NLP
+    %% Solve the NLP
     sol = opti.solve();
-    sol.value(U);
 
-    % Get the results
+    % get the updated invariants
     optim_result = struct();
-    optim_result.pos_data = sol.value(p_DHB_var);
-    optim_result.rvec_data = sol.value(rvec_DHB_var);
-    optim_result.invariants = sol.value(U);
+    optim_result.invariants = zeros(size(invariants_demo));
+    for k=1:N
+    % optim_result.pos_data = sol.value(p_DHB_var);
+    % optim_result.rvec_data = sol.value(rvec_DHB_var);
+        optim_result.invariants(k,:) = sol.value(U_var{k});
+    end
 
     %% compare the DHB invariants before and after optimization
-    % Compute DHB invariants for trajectory before optimization
-    [pos_invariant_before, rot_invariant_before, linear_frame_initial, angular_frame_initial] = computeDHB(diff(init_traj), rvec_data(1:end-1,:), 'pos', T0);
-
-    % Compute DHB invariants for trajectory after optimization
-    final_traj = result.opt_traj';
-    [pos_invariant_after, rot_invariant_after, linear_frame_initial, angular_frame_initial] = computeDHB(diff(final_traj), rvec_data(1:end-1,:), 'pos', T0);
-
-    % Compute DHB invariants for trajectory after optimization with eFSI
-    [pos_invariant_after2, rot_invariant_after2, linear_frame_initial, angular_frame_initial] = computeDHB(diff(eFSI_pos_traj), rvec_data(1:end-1,:), 'pos', T0);
 
     % Plot the invariants
     figure('NumberTitle', 'off', 'Name', 'Cartesian pose to DHB');
@@ -1184,15 +1155,40 @@ if (select_program == 5)
     dhbInvNames = {'m_p' '\theta_p^1' '\theta_p^2'};
     for i=1:3
         subplot(3,1,i)
-        plot(invariants_pos(:,i))
+        plot(invariants_demo(:,i))
         hold on;
-        plot(pos_invariant_before(:,i))
-        plot(pos_invariant_after(:,i))
-        plot(pos_invariant_after2(:,i))
+        plot(optim_result.invariants(:,i))
         ylabel(dhbInvNames{i});
-        legend('original', 'transformed', 'optimized(GRP)', 'optimized(eFSI)');
+        legend('original', 'optimized(casadi)');
         grid on
     end
+
+    %% Plot the trajectory after reconstruction
+
+    % reconstruct the data
+    [pos_r_opt_data, rvec_r_opt_data] = reconstructTrajectory(optim_result.invariants, linear_frame_initial, angular_frame_initial, 'pos');
+
+    % get the rotation matrices
+    rotm_r_opt_data = zeros(3,3,N);
+    for i=1:N
+        rvec = rvec_r_opt_data(i,:);
+        rotm = rotationVectorToMatrix(rvec)';
+        rotm_r_opt_data(:,:,i) = rotm;
+    end
+
+
+    % trajectory 1
+    path_first = struct();
+    path_first.pos_data = pos_data;
+    path_first.rot_data = rotm_data;
+
+    % trajectory 2
+    path_second = struct();
+    path_second.pos_data = pos_r_opt_data;
+    path_second.rot_data = rotm_r_opt_data;
+
+    plot_trajectory(path_first, path_second, 'The initial Traj, Result with Casadi', true);
+
 
 end
 
