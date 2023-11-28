@@ -1057,7 +1057,7 @@ if (select_program == 5)
 
     % set a desired target location
     goal_orig = pos_data(N, :);
-    goal_offset = [-0.5, -1.5, 0.5];
+    goal_offset = [-0.5, -0.5, 0.5];
     % goal_offset = zeros(1,3);
     goal_new = goal_orig + goal_offset;
 
@@ -1083,12 +1083,11 @@ if (select_program == 5)
     % Define system states
     p_DHB_var = cell(1,N);
     rvec_DHB_var = cell(1,N);
-    U_var = cell(1,N);
+    U_var = opti.variable(N, 6);
 
     for k=1:N
         p_DHB_var{k} = opti.variable(1,3); % position
         rvec_DHB_var{k} = opti.variable(1,3); % rotation vector
-        U_var{k} = opti.variable(1, 6);
     end
 
     % Initialize linear and angular frames
@@ -1098,7 +1097,7 @@ if (select_program == 5)
     % Apply dynamic constraints using the single step method
     for k = 1:N-1
         [new_linear_frame, new_angular_frame, new_position, new_rotation] = ...
-            reconstructTrajectorySingleStep(U_var{k}, linear_frame, angular_frame, 'pos');
+            reconstructTrajectorySingleStep(U_var(k,:), linear_frame, angular_frame, 'pos');
 
         % Update frames for next iteration
         linear_frame = new_linear_frame;
@@ -1120,7 +1119,7 @@ if (select_program == 5)
     % Construct objective
     objective = 0;
     for k=1:N
-        e = U_var{k} - invariants_demo(k,:); % invariants error
+        e = U_var(k,:) - invariants_demo(k,:); % invariants error
         e_weighted = sqrt(weights).*e';
         objective = objective + e_weighted'*e_weighted;
     end
@@ -1129,23 +1128,19 @@ if (select_program == 5)
     for k=1:N
         opti.set_initial(p_DHB_var{k}, init_traj(k,1:3));
         opti.set_initial(rvec_DHB_var{k}, init_traj(k,4:6));
-        opti.set_initial(U_var{k}, invariants_demo(k,:));
+        opti.set_initial(U_var(k,:), invariants_demo(k,:));
     end
 
     opti.minimize(objective);
     opti.solver('ipopt', struct(), struct('tol', 1e-5));
 
-    %% Solve the NLP
+    % Solve the NLP
     sol = opti.solve();
 
     % get the updated invariants
     optim_result = struct();
     optim_result.invariants = zeros(size(invariants_demo));
-    for k=1:N
-    % optim_result.pos_data = sol.value(p_DHB_var);
-    % optim_result.rvec_data = sol.value(rvec_DHB_var);
-        optim_result.invariants(k,:) = sol.value(U_var{k});
-    end
+    optim_result.invariants = sol.value(U_var);
 
     %% compare the DHB invariants before and after optimization
 
