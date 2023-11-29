@@ -972,7 +972,7 @@ if (select_program == 5)
 
     % set a desired target location
     goal_orig = pos_data(N, :);
-    goal_offset = [-0.5, -0.5, 0.5];
+    goal_offset = [-0.5, -1.5, 0.5];
     goal_new = goal_orig + goal_offset;
 
     %% Trajectory adaptation with GRP
@@ -1129,7 +1129,6 @@ if (select_program == 5)
         rotm_r_opt_data(:,:,i) = rotm;
     end
 
-
     % trajectory 1
     path_first = struct();
     path_first.pos_data = pos_data;
@@ -1145,11 +1144,16 @@ if (select_program == 5)
     path_third.pos_data = pos_r_opt_data;
     path_third.rot_data = rotm_r_opt_data;
 
-    path_data = {path_first, path_second, path_third};
-    color_data = {[0 0 255]/255, [0 255 0]/255, [255 0 0]/255};
+    % trajectory 4
+    path_fourth = struct();
+    path_fourth.pos_data = eFSI_pos_traj;
+    path_fourth.rot_data = eFSI_rot_traj;
 
-    plot_se3_trajectories(path_data, color_data, 'The initial Traj (blue), Result with GRP (green), Result with Casadi (red)', true);
+    path_data = {path_first, path_second, path_third, path_fourth};
+    color_data = random_color(size(path_data,2),'jet');
+    legend_texts = {'The initial Traj', 'Result (GRP)', 'Result (DHB-NLP)', 'Result (eFSI-NLP)'};
 
+    plot_se3_trajectories(path_data, color_data, 'Comparison on the results with the demo path', false, legend_texts);
 end
 
 

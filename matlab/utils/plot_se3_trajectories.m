@@ -1,4 +1,4 @@
-function plot_se3_trajectories(trajectories, colors, titletext, show_rotation)
+function plot_se3_trajectories(trajectories, colors, titletext, show_rotation, legend_texts)
 
 % Parameters for plotting (same as before)
 inc = 5;
@@ -37,7 +37,7 @@ for idx = 1:length(trajectories)
     trajectory = trajectories{idx};
     p_obj = trajectory.pos_data;
     R = trajectory.rot_data;
-    color = colors{idx};
+    color = colors(idx,:);
 
     [N,M] = size(p_obj);
 
@@ -50,14 +50,27 @@ for idx = 1:length(trajectories)
     maxZ = max(maxZ, max(p_obj(:,3)));
 
     % Plot trajectory
-    for j = 1:M/3
-        plot3(p_obj(:,3*j-2), p_obj(:,3*j-1), p_obj(:,3*j), '.-', 'Color', color, 'MarkerSize', 7,'linewidth', 1.5);
-        plot3(p_obj(1,3*j-2), p_obj(1,3*j-1), p_obj(1,3*j), 'o', 'Color', color, 'MarkerSize', 7, 'LineWidth', 2);
-        plot3(p_obj(N,3*j-2), p_obj(N,3*j-1), p_obj(N,3*j), '*', 'Color', color, 'MarkerSize', 7, 'LineWidth', 2);
-    end
+    plot3(p_obj(:,1), p_obj(:,2), p_obj(:,3), 'Color', color, 'linewidth', 2);
+end
 
-    % Draw orientation and cubes
-    if show_rotation
+% Add legend if legend texts are provided
+if exist('legend_texts', 'var') && ~isempty(legend_texts)
+    legend(legend_texts, 'Location', 'best');
+end
+
+% Loop through each trajectory
+if show_rotation
+    for idx = 1:length(trajectories)
+
+        trajectory = trajectories{idx};
+        p_obj = trajectory.pos_data;
+        R = trajectory.rot_data;
+        color = colors(idx,:);
+
+        [N,M] = size(p_obj);
+
+        % Draw orientation and cubes
+
         Rx = []; Ry = []; Rz = []; p = [];
         for j = round(linspace(1, N, inc))
             Rx = [Rx; R(1:3,1,j)'];
