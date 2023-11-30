@@ -1,9 +1,8 @@
-function plot_se3_trajectories(trajectories, colors, titletext, show_rotation, legend_texts)
+function plot_se3_trajectories(trajectories, colors, titletext, legend_texts, params)
 
 % Parameters for plotting (same as before)
 inc = 5;
 linewidth = '1';
-scale = 0;
 
 % Initialize axis limits
 minX = Inf; maxX = -Inf;
@@ -11,11 +10,16 @@ minY = Inf; maxY = -Inf;
 minZ = Inf; maxZ = -Inf;
 
 % Calculate scale based on all trajectories
-for i = 1:length(trajectories)
-    p_obj = trajectories{i}.pos_data;
-    scale = max(scale, (max(p_obj(:,1))-min(p_obj(:,1))) + (max(p_obj(:,2))-min(p_obj(:,2))) + (max(p_obj(:,3))-min(p_obj(:,3))));
+if (params.auto_calculate_scale)
+    scale = 1;
+    for i = 1:length(trajectories)
+        p_obj = trajectories{i}.pos_data;
+        scale = max(scale, (max(p_obj(:,1))-min(p_obj(:,1))) + (max(p_obj(:,2))-min(p_obj(:,2))) + (max(p_obj(:,3))-min(p_obj(:,3))));
+    end
+else
+    scale = params.scale;
 end
-scale = max(scale, 1);
+
 lencx = 0.1*scale;
 lency = 0.060*scale;
 lencz = 0.060*scale;
@@ -32,7 +36,9 @@ zlabel('$z$[m]','Interpreter','LaTex','FontSize',18)
 title(titletext)
 
 % Loop through each trajectory
-for idx = 1:length(trajectories)
+num_traj = length(trajectories);
+handle_plot = zeros(1, num_traj);
+for idx = 1:num_traj
 
     trajectory = trajectories{idx};
     p_obj = trajectory.pos_data;
@@ -50,16 +56,11 @@ for idx = 1:length(trajectories)
     maxZ = max(maxZ, max(p_obj(:,3)));
 
     % Plot trajectory
-    plot3(p_obj(:,1), p_obj(:,2), p_obj(:,3), 'Color', color, 'linewidth', 2);
-end
-
-% Add legend if legend texts are provided
-if exist('legend_texts', 'var') && ~isempty(legend_texts)
-    legend(legend_texts, 'Location', 'best');
+    handle_plot(idx) = plot3(p_obj(:,1), p_obj(:,2), p_obj(:,3), 'Color', color, 'linewidth', 2);
 end
 
 % Loop through each trajectory
-if show_rotation
+if params.show_rotation
     for idx = 1:length(trajectories)
 
         trajectory = trajectories{idx};
@@ -102,4 +103,9 @@ margin = 0.2;
 axis([minX - margin, maxX + margin, ...
     minY - margin, maxY + margin, ...
     minZ - margin, maxZ + margin]);
+
+% Add legend if legend texts are provided
+if exist('legend_texts', 'var') && ~isempty(legend_texts)
+    legend(handle_plot, legend_texts, 'Location', 'best');
+end
 end

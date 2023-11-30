@@ -1,21 +1,26 @@
-function R = random_color(n,preset)
+function R = random_color(n,preset,seed)
   % RANDOM_COLOR  generate a list of random colors
   %
   % R = random_color(size)
   % or
-  % R = random_color(size,preset)
+  % R = random_color(size,preset,seed)
   %
   % Inputs:
   %   size  size of matrix of random colors to generate
   %   preset  string containing colormap name or 'Pastel'
+  %   seed  seed for random color picking
   % Outputs:
   %   R  size by 3 list of RGB colors
   %
 
-  
+  if(exist('seed','var'))
+      rng(seed);
+  end
+
   if(~exist('n','var'))
     n = 1;
   end
+
   if(~exist('preset','var'))
     preset = '';
   end

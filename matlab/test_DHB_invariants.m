@@ -1,7 +1,7 @@
 %%% Testing the concept of DHB invariants
 % Andy Park, Nov 2023
 
-select_program = 5;
+select_program = 6;
 
 %%% 11-10-23
 % 1) show the invariance over affine transforms
@@ -1150,10 +1150,218 @@ if (select_program == 5)
     path_fourth.rot_data = eFSI_rot_traj;
 
     path_data = {path_first, path_second, path_third, path_fourth};
-    color_data = random_color(size(path_data,2),'jet');
+    color_data = random_color(size(path_data,2),'jet',1212);
     legend_texts = {'The initial Traj', 'Result (GRP)', 'Result (DHB-NLP)', 'Result (eFSI-NLP)'};
+    params = struct('auto_calculate_scale', true, 'show_rotation', false);
 
-    plot_se3_trajectories(path_data, color_data, 'Comparison on the results with the demo path', false, legend_texts);
+    plot_se3_trajectories(path_data, color_data, 'Comparison on the results with the demo path', legend_texts, params);
+end
+
+%%% Thu Nov 30 05:18:09 AM EST 2023
+% 1) create an outer function
+% 2) try rotational changes
+% 3) try more variety of data and generate some more plots
+if (select_program == 6)
+
+    %% Data Preparation
+
+    addpath(genpath(pwd));
+    ccc;
+
+    % loading pose data, format: rows=samples, columns=x|y|z|qx|qy|qz|qw
+    % note: you can also use marker data together with the function markers2pose.m
+
+    load data/vive_data.mat
+    N = length(measured_pose_coordinates);
+    dt = 1/60; % timestep
+
+    % Convert quaternion to rotation matrix
+    pos_data = measured_pose_coordinates(:,2:4); % position
+    rotm_data = zeros(3,3,N);
+    rvec_data = zeros(N, 3);
+    for i=1:N
+        % [qw, qx, qy, qz]
+        pos = pos_data(i,:)';
+        qt = [measured_pose_coordinates(i,8), measured_pose_coordinates(i,5:7)];
+        rotm = quat2rotm(qt); % rotation matrix
+        rvec = rotationMatrixToVector(rotm);
+
+        % store the data
+        rotm_data(:,:,i) = rotm;
+        rvec_data(i, :) = rvec;
+    end
+    rotm_data_orig = rotm_data;
+
+    % Get the initial transform
+    T0 = [rotm_data(:,:,1) pos_data(1,:)'; 0 0 0 1];
+
+    % resample the path -- 50 points
+    Nframes = 50;
+    timeNew = linspace(1, size(pos_data,1), Nframes);
+    pos_data = SpatialRobotModel.cubicInterp(pos_data, 1:N, timeNew);
+    rvec_data = SpatialRobotModel.cubicInterp(rvec_data, 1:N, timeNew);
+    N_orig = Nframes;
+    N = N_orig;
+
+    % resize the data
+    rotm_data = zeros(3,3,N);
+    for i=1:N
+        rvec = rvec_data(i,:);
+        rotm = rotationVectorToMatrix(rvec)';
+        rotm_data(:,:,i) = rotm;
+    end
+
+    % smooth the data a bit
+    pos_data_orig = pos_data;
+    pos_data = smoothdata(pos_data, "sgolay", 5);
+
+    % get the pos diff data
+    pos_diff_data = diff(pos_data);
+
+    % Compute position based DHB invariants
+    [pos_invariant, rot_invariant, linear_frame_initial, angular_frame_initial] = computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
+    path_invariants = [pos_invariant, rot_invariant];
+
+    % transform the goal position
+    N = N_orig - 3;
+
+    % set a desired target location
+    goal_orig = pos_data(N, :);
+    goal_offset = [-0.5, -1.5, 0.5];
+    goal_new = goal_orig + goal_offset;
+
+    %% Try trajectory adaptation with OCP
+
+    %%% construct an ocp with casadi
+
+    % Import statement that loads the Casadi module with its functions
+    import casadi.*
+    clc;
+
+    opti = casadi.Opti();
+
+    % Initial values
+    init_traj = [pos_data(1:N, :), rvec_data(1:N, :)];
+    invariants_demo = path_invariants;
+    p_frame_init = linear_frame_initial;
+    R_frame_init = angular_frame_initial;
+
+    % constraints
+    constraints = struct();
+    constraints.start_pose = init_traj(1,:);
+    constraints.target_pose = [goal_new, rvec_data(N,:)];
+
+    % Define system states
+    p_DHB_var = cell(1,N);
+    rvec_DHB_var = cell(1,N);
+    U_var = opti.variable(N, 6);
+
+    for k=1:N
+        p_DHB_var{k} = opti.variable(1,3); % position
+        rvec_DHB_var{k} = opti.variable(1,3); % rotation vector
+    end
+
+    % Initialize linear and angular frames
+    linear_frame = p_frame_init;
+    angular_frame = R_frame_init;
+
+    % Apply dynamic constraints using the single step method
+    for k = 1:N-1
+        [new_linear_frame, new_angular_frame, new_position, new_rotation] = ...
+            reconstructTrajectorySingleStep(U_var(k,:), linear_frame, angular_frame, 'pos');
+
+        % Update frames for next iteration
+        linear_frame = new_linear_frame;
+        angular_frame = new_angular_frame;
+
+        % Set the dynamic constraints
+        opti.subject_to(p_DHB_var{k+1} == new_position);
+        opti.subject_to(rvec_DHB_var{k+1} == new_rotation);
+    end
+
+    % Constraints on the start and end pose
+    opti.subject_to(p_DHB_var{1} == constraints.start_pose(1:3));
+    opti.subject_to(rvec_DHB_var{1} == constraints.start_pose(4:6));
+    opti.subject_to(p_DHB_var{end} == constraints.target_pose(1:3));
+    opti.subject_to(rvec_DHB_var{end} == constraints.target_pose(4:6));
+
+    % Construct objective
+    weights = [1, 1, 1, 1, 1, 1]';
+    % Construct objective
+    objective = 0;
+    for k=1:N
+        e = U_var(k,:) - invariants_demo(k,:); % invariants error
+        e_weighted = sqrt(weights).*e';
+        objective = objective + e_weighted'*e_weighted;
+    end
+
+    % Initialize states and controls
+    for k=1:N
+        opti.set_initial(p_DHB_var{k}, init_traj(k,1:3));
+        opti.set_initial(rvec_DHB_var{k}, init_traj(k,4:6));
+        opti.set_initial(U_var(k,:), invariants_demo(k,:));
+    end
+
+    opti.minimize(objective);
+    opti.solver('ipopt', struct(), struct('tol', 1e-5));
+
+    % Solve the NLP
+    sol = opti.solve();
+
+    % get the updated invariants
+    optim_result = struct();
+    optim_result.invariants = zeros(size(invariants_demo));
+    optim_result.invariants = sol.value(U_var);
+
+    %%% compare the DHB invariants before and after optimization
+
+    plot_comparison_invariants = false;
+
+    if (plot_comparison_invariants)
+        % Plot the invariants
+        figure('NumberTitle', 'off', 'Name', 'Cartesian pose to DHB');
+
+        dhbInvNames = {'m_p' '\theta_p^1' '\theta_p^2'};
+        for i=1:3
+            subplot(3,1,i)
+            plot(invariants_demo(:,i))
+            hold on;
+            plot(optim_result.invariants(:,i))
+            ylabel(dhbInvNames{i});
+            legend('original', 'optimized(casadi)');
+            grid on
+        end
+    end
+
+    %% Plot the trajectory after reconstruction
+
+    % reconstruct the data
+    [pos_r_opt_data, rvec_r_opt_data] = reconstructTrajectory(optim_result.invariants, linear_frame_initial, angular_frame_initial, 'pos');
+
+    % get the rotation matrices
+    rotm_r_opt_data = zeros(3,3,N);
+    for i=1:N
+        rvec = rvec_r_opt_data(i,:);
+        rotm = rotationVectorToMatrix(rvec)';
+        rotm_r_opt_data(:,:,i) = rotm;
+    end
+
+    % trajectory 1
+    path_first = struct();
+    path_first.pos_data = pos_data;
+    path_first.rot_data = rotm_data;
+
+    % trajectory 2
+    path_second = struct();
+    path_second.pos_data = pos_r_opt_data;
+    path_second.rot_data = rotm_r_opt_data;
+
+    path_data = {path_first, path_second};
+    color_data = random_color(size(path_data,2),'jet',1232);
+    legend_texts = {'The initial Traj', 'Result (DHB-NLP)'};
+    params = struct('auto_calculate_scale', false, 'scale', 3, 'show_rotation', true);
+    plot_se3_trajectories(path_data, color_data, ...
+        'Comparison on the results with the demo path', legend_texts, params);
 end
 
 
