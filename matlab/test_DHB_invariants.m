@@ -888,6 +888,7 @@ end
 
 %%% Mon Nov 27 05:18:09 AM EST 2023
 % 1) try using an OCP approach to solve trajectory adaptation problem
+% 2) compare the results with GRP, eFSI
 if (select_program == 5)
 
     %% Data Preparation
@@ -1159,8 +1160,6 @@ end
 
 %%% Thu Nov 30 05:18:09 AM EST 2023
 % 1) create an outer function
-% 2) try rotational changes
-% 3) try more variety of data and generate some more plots
 if (select_program == 6)
 
     %% Data Preparation
@@ -1193,10 +1192,57 @@ if (select_program == 6)
     rotm_data_orig = rotm_data;
 
     % Get the initial transform
-    T0 = [rotm_data(:,:,1) pos_data(1,:)'; 0 0 0 1];
+    T_init_orig = [rotm_data(:,:,1) pos_data(1,:)'; 0 0 0 1];
+    T_final_orig = [rotm_data(:,:,end) pos_data(end,:)'; 0 0 0 1];
 
-    % resample the path -- 50 points
-    Nframes = 50;
+    %% call the refactored method for trajectory adaptation
+
+    % Define input parameters
+    inputPoseData = struct('pos_data', pos_data, 'rotm_data', rotm_data);
+    params = struct('Nframes', 50, 'smoothing', true, ...
+        'plot_comparison_invariants', true, 'weights', ones(6,1));
+    T_init = SpatialRobotModel.transl(-0.1, 0.2, -0.3) * T_init_orig;
+    T_final = SpatialRobotModel.transl(-0.5, -0.5, 0.5) * T_final_orig;
+
+    % Generate adapted trajectory
+    result = generate_trajectory(inputPoseData, params, T_init, T_final);
+
+    % Plot the trajectory after reconstruction
+
+    % trajectory 1
+    path_first = struct();
+    path_first.pos_data = pos_data;
+    path_first.rot_data = rotm_data;
+
+    % trajectory 2
+    path_second = struct();
+    path_second.pos_data = result.pos_data;
+    path_second.rot_data = result.rotm_data;
+
+    path_data = {path_first, path_second};
+    color_data = random_color(size(path_data,2),'jet',1232);
+    legend_texts = {'The initial Traj', 'Result (DHB-NLP)'};
+    params = struct('auto_calculate_scale', false, 'scale', 3, 'show_rotation', true);
+    plot_se3_trajectories(path_data, color_data, ...
+        'Comparison on the results with the demo path', legend_texts, params);
+end
+
+% Adapt the input trajectory for a given input and target pose
+% this method solves an NLP to find another path in SE3 that best preserves
+% the shape description represented by DHB invariant se3 path shape descriptor.
+function result = generate_trajectory(inputPoseData, params, T_init, T_final)
+
+    % get the position and rotation data from the input
+    pos_data = inputPoseData.pos_data;
+    rotm_data = inputPoseData.rotm_data;
+    N = size(pos_data,1);
+
+    for i=1:N
+        rvec_data(i, :) = rotationMatrixToVector(rotm_data(:,:,i));
+    end
+
+    % resample the path
+    Nframes = params.Nframes;
     timeNew = linspace(1, size(pos_data,1), Nframes);
     pos_data = SpatialRobotModel.cubicInterp(pos_data, 1:N, timeNew);
     rvec_data = SpatialRobotModel.cubicInterp(rvec_data, 1:N, timeNew);
@@ -1219,16 +1265,11 @@ if (select_program == 6)
     pos_diff_data = diff(pos_data);
 
     % Compute position based DHB invariants
-    [pos_invariant, rot_invariant, linear_frame_initial, angular_frame_initial] = computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
+    [pos_invariant, rot_invariant, linear_frame_initial, angular_frame_initial] = computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T_init);
     path_invariants = [pos_invariant, rot_invariant];
 
     % transform the goal position
     N = N_orig - 3;
-
-    % set a desired target location
-    goal_orig = pos_data(N, :);
-    goal_offset = [-0.5, -1.5, 0.5];
-    goal_new = goal_orig + goal_offset;
 
     %% Try trajectory adaptation with OCP
 
@@ -1249,7 +1290,7 @@ if (select_program == 6)
     % constraints
     constraints = struct();
     constraints.start_pose = init_traj(1,:);
-    constraints.target_pose = [goal_new, rvec_data(N,:)];
+    constraints.target_pose = [T_final(1:3,4), rotationMatrixToVector(T_final(1:3,1:3))'];
 
     % Define system states
     p_DHB_var = cell(1,N);
@@ -1286,12 +1327,10 @@ if (select_program == 6)
     opti.subject_to(rvec_DHB_var{end} == constraints.target_pose(4:6));
 
     % Construct objective
-    weights = [1, 1, 1, 1, 1, 1]';
-    % Construct objective
     objective = 0;
     for k=1:N
         e = U_var(k,:) - invariants_demo(k,:); % invariants error
-        e_weighted = sqrt(weights).*e';
+        e_weighted = sqrt(params.weights).*e';
         objective = objective + e_weighted'*e_weighted;
     end
 
@@ -1315,9 +1354,7 @@ if (select_program == 6)
 
     %%% compare the DHB invariants before and after optimization
 
-    plot_comparison_invariants = false;
-
-    if (plot_comparison_invariants)
+    if (params.plot_comparison_invariants)
         % Plot the invariants
         figure('NumberTitle', 'off', 'Name', 'Cartesian pose to DHB');
 
@@ -1333,7 +1370,7 @@ if (select_program == 6)
         end
     end
 
-    %% Plot the trajectory after reconstruction
+    %-- transform the solution to the se3 data
 
     % reconstruct the data
     [pos_r_opt_data, rvec_r_opt_data] = reconstructTrajectory(optim_result.invariants, linear_frame_initial, angular_frame_initial, 'pos');
@@ -1346,24 +1383,11 @@ if (select_program == 6)
         rotm_r_opt_data(:,:,i) = rotm;
     end
 
-    % trajectory 1
-    path_first = struct();
-    path_first.pos_data = pos_data;
-    path_first.rot_data = rotm_data;
-
-    % trajectory 2
-    path_second = struct();
-    path_second.pos_data = pos_r_opt_data;
-    path_second.rot_data = rotm_r_opt_data;
-
-    path_data = {path_first, path_second};
-    color_data = random_color(size(path_data,2),'jet',1232);
-    legend_texts = {'The initial Traj', 'Result (DHB-NLP)'};
-    params = struct('auto_calculate_scale', false, 'scale', 3, 'show_rotation', true);
-    plot_se3_trajectories(path_data, color_data, ...
-        'Comparison on the results with the demo path', legend_texts, params);
+    % construct the result
+    result = struct();
+    result.pos_data = pos_r_opt_data;
+    result.rotm_data = rotm_r_opt_data;
 end
-
 
 
 % a function that converts rotation vector data to quaternion vector data
