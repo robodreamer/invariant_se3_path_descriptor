@@ -4,6 +4,12 @@ function plot_se3_trajectories(trajectories, colors, titletext, legend_texts, pa
 inc = 5;
 linewidth = '1';
 
+% Define start and end marker colors and styles
+startMarkerColor = [0, 1, 0]; % Green for start
+endMarkerColor = [1, 0, 0]; % Red for end
+startMarkerStyle = 'o'; % Circle marker
+endMarkerStyle = 'x'; % Cross marker
+
 % Initialize axis limits
 minX = Inf; maxX = -Inf;
 minY = Inf; maxY = -Inf;
@@ -57,6 +63,11 @@ for idx = 1:num_traj
 
     % Plot trajectory
     handle_plot(idx) = plot3(p_obj(:,1), p_obj(:,2), p_obj(:,3), 'Color', color, 'linewidth', 2);
+    % Mark start and end points
+    plot3(p_obj(1,1), p_obj(1,2), p_obj(1,3), ...
+          startMarkerStyle, 'Color', startMarkerColor, 'MarkerSize', 10, 'LineWidth', 2);
+    plot3(p_obj(end,1), p_obj(end,2), p_obj(end,3), ...
+          endMarkerStyle, 'Color', endMarkerColor, 'MarkerSize', 10, 'LineWidth', 2);
 end
 
 % Loop through each trajectory
@@ -79,9 +90,12 @@ if params.show_rotation
             Rz = [Rz; R(1:3,3,j)'];
             p = [p; p_obj(j,:)];
         end
-        arrow3(p, p+len*Rx, ['_r' linewidth],t,2*t)
-        arrow3(p, p+len*Ry, ['_e' linewidth],t,2*t)
-        arrow3(p, p+len*Rz, ['_b' linewidth],t,2*t)
+
+        if params.show_coordinates
+            arrow3(p, p+len*Rx, ['_r' linewidth],t,2*t)
+            arrow3(p, p+len*Ry, ['_e' linewidth],t,2*t)
+            arrow3(p, p+len*Rz, ['_b' linewidth],t,2*t)
+        end
 
         % Draw cubes
         for j = round(linspace(1, N, inc))
