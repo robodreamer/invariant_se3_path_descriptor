@@ -1232,7 +1232,8 @@ if (select_program == 6)
 end
 
 %%% Sat Dec 2nd 05:18:09 AM EST 2023
-% 1) fix the issue with rotation
+% 1) a unit test for the result 
+% -- with no change in offset, getting the input back
 if (select_program == 7)
 
     %% Data Preparation
@@ -1273,20 +1274,16 @@ if (select_program == 7)
     close all;
 
     % Define input parameters
+    % the error with the input is minimized with Nframes = 100 (but slower)
     inputPoseData = struct('pos_data', pos_data, 'rotm_data', rotm_data);
-    params = struct('Nframes', 100, 'smoothing', false, ...
+    params = struct('Nframes', 50, 'smoothing', false, ...
         'plot_comparison_invariants', true, 'weights', ones(6,1));
-    % T_init = SpatialRobotModel.transl(0, 0, 0) * T_init_orig;
-    % T_final = SpatialRobotModel.transl(0, 0, 0) * T_final_orig;
 
-    posOffset_init = SpatialRobotModel.randRange(3, 0, 0); % Random translation between -0.2 and 0.2 for each axis
-    posOffset_final = SpatialRobotModel.randRange(3, 0, 0); % Random translation between -0.2 and 0.2 for each axis
-    posOffset_final(3) = 0;
-    rotOffset_init = SpatialRobotModel.randRange(3, 0, 0); % Random rotation between -pi and pi for each RPY angle
-    % rotOffset_final = SpatialRobotModel.randRange(3, -pi, pi); % Random rotation between -pi and pi for each RPY angle
-    % rotOffset_final(1) = 0;
-    % rotOffset_final(2) = 0;
-    rotOffset_final = deg2rad([0, 0, 0]);
+    % You can try change the offsets here
+    posOffset_init = [0, 0, 0];  % [m]
+    posOffset_final = [0, 0, 0]; % [m]
+    rotOffset_init = deg2rad([0, 0, 0]); % [deg]
+    rotOffset_final = deg2rad([0, 0, 0]); % [deg]
     T_init = SpatialRobotModel.transl(posOffset_init(1), posOffset_init(2), posOffset_init(3)) * ...
              T_init_orig * ...
              SpatialRobotModel.r2t(SpatialRobotModel.rpy2R(rotOffset_init(1), rotOffset_init(2), rotOffset_init(3)));
@@ -1298,9 +1295,7 @@ if (select_program == 7)
     % Generate adapted trajectory
     result = generate_trajectory(inputPoseData, params, T_init, T_final);
 
-    % Plot the trajectory after reconstruction
-
-    % path_size = size(result.pos_data,1);
+    %-- Plot the result trajectory after adaptation
 
     % trajectory 1
     path_first = struct();
@@ -1317,11 +1312,13 @@ if (select_program == 7)
     legend_texts = {'The initial Traj', 'The Adapted Traj (DHB-NLP)'};
     params = struct('auto_calculate_scale', false, 'scale', 2, ...
         'show_rotation', true, 'show_coordinates', true);
-    plot_se3_trajectories(path_data, color_data, ...
-        'Comparison on the results with the demo path', legend_texts, params);
+    handle_paths = plot_se3_trajectories(path_data, color_data, ...
+        'Comparison on the results with the demo path', params);
 
     % overlay T_final
     SpatialRobotModel.drawFrame(T_final, 0.2, 3);
+
+    legend(handle_paths, legend_texts, 'Location', 'best');
 end
 
 

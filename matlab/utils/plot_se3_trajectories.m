@@ -1,4 +1,4 @@
-function plot_se3_trajectories(trajectories, colors, titletext, legend_texts, params)
+function handle_plot = plot_se3_trajectories(trajectories, colors, titletext, params)
 
 % Parameters for plotting (same as before)
 inc = 5;
