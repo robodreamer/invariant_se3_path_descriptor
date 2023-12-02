@@ -2,7 +2,8 @@ function plot_se3_trajectories(trajectories, colors, titletext, legend_texts, pa
 
 % Parameters for plotting (same as before)
 inc = 5;
-linewidth = '1';
+lineLength = 0.1;
+lineWidth = 1.5;
 
 % Define start and end marker colors and styles
 startMarkerColor = [0, 1, 0]; % Green for start
@@ -30,7 +31,6 @@ lencx = 0.1*scale;
 lency = 0.060*scale;
 lencz = 0.060*scale;
 len = 1.2*lencx;
-t = 1;
 
 % Setup figure
 figure; clf;
@@ -89,12 +89,11 @@ if params.show_rotation
             Ry = [Ry; R(1:3,2,j)'];
             Rz = [Rz; R(1:3,3,j)'];
             p = [p; p_obj(j,:)];
-        end
 
-        if params.show_coordinates
-            arrow3(p, p+len*Rx, ['_r' linewidth],t,2*t)
-            arrow3(p, p+len*Ry, ['_e' linewidth],t,2*t)
-            arrow3(p, p+len*Rz, ['_b' linewidth],t,2*t)
+            if params.show_coordinates
+                T = [R(:,:,j), p_obj(j,:)'; 0 0 0 1];
+                SpatialRobotModel.drawFrame(T, lineLength, lineWidth);
+            end
         end
 
         % Draw cubes
