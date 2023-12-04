@@ -166,7 +166,7 @@ classdef SpatialRobotModel < handle
 
         %% interpolation related functions
 
-        function dataNew = cubicInterp(data, time, timeNew)
+        function dataNew = cubicInterp(data, time, timeNew, method)
             % CUBICINTERP cubic interpolation for a N-dim data
             %   dataNew = CUBICINTERP(data, time, timeNew) interpolates
             %   data with timeNew and generates dataNew.
@@ -176,13 +176,17 @@ classdef SpatialRobotModel < handle
             %   data = sind(time)';
             %   timeNew = 0:5:360;
             %   out = SpatialRobotModel.CUBICINTERP(data,time,timeNew)
+            
+            if ~exist('method','var')
+                method = 'pchip';
+            end
 
             dataNew = zeros(length(timeNew),size(data,2));
             for i=1:size(data,2)
                 % one dim. data
                 data_tmp = data(:,i);
                 % apply cubic interpolation to get a new data
-                dataNew(:,i) = interp1(time, data_tmp, timeNew, 'pchip');
+                dataNew(:,i) = interp1(time, data_tmp, timeNew, method);
             end
         end
 
