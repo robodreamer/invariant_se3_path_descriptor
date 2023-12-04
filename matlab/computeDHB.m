@@ -4,19 +4,20 @@
 %      recognition and reproduction", Auton. Robots, 42(1):125–145, 2018.
 
 %% Compute DHB invariants (position- or velocity-based)
-% Input: 
-%        position_diff - position difference or linear velocity (Nx3 array) 
+% Input:
+%        position_diff - position difference or linear velocity (Nx3 array)
 %        rotation_diff - rotation vector difference or angular velocity (Nx3 array)
 %        method - 'pos': position-based DHB, 'vel': velocity-based DHB
 %        initial_pose - initial pose (used only if method='pos')
-% 
+%
 % Output:
 %        linear_motion_invariant - first linear (position or velocity) invariant (N-2 array)
 %        angular_motion_invariant - first angular (position or velocity) invariant (N-2 array)
 %        linear_frame_initial - Initial linear frame
 %        angular_frame_initial - Initial angular frame
 
-function [linear_motion_invariant, angular_motion_invariant, linear_frame_initial, angular_frame_initial] = computeDHB(position_diff, rotation_diff, method, initial_pose)
+function [linear_motion_invariant, angular_motion_invariant, linear_frame_initial, angular_frame_initial] = ...
+    computeDHB(position_diff, rotation_diff, method, initial_pose)
 
 [num_samples, ~] = size(rotation_diff);
 
@@ -47,21 +48,59 @@ angular_frame_y = computeFrameAxisY(angular_frame_x, angular_frame_x2, [0 1 0]);
 angular_frame_z = cross(angular_frame_x,angular_frame_y);
 angular_frame_z = normalizeVector(angular_frame_z);
 
-angular_frame_initial = eye(3);
+%---- this is experimental to reflect the initial rotation ----
+find_aligning_rot_matrix = false;
+if (find_aligning_rot_matrix && strcmp(method, 'pos'))
+    select_method = 1;
+    R_init = initial_pose(1:3,1:3);
+    R_orig = rotationVectorToMatrix(rotation_diff(1,:));
 
-angular_frame_initial(1:3,1:3) = ([angular_frame_x', angular_frame_y', angular_frame_z']);
+    if (select_method == 1)
+        % use relative rotation between original and the desired initial
+
+        R_align = R_init * R_orig';
+        R_temp = ([angular_frame_x', angular_frame_y', angular_frame_z']);
+        aligning_rot_matrix = R_temp' * R_align * R_temp;
+    elseif (select_method == 2) % not working
+        % apply the same construction to between the desired initial and
+        % original
+        rvec_init = rotationMatrixToVector(R_init);
+        angular_frame_init_x = computeFrameAxisX(rvec_init, [1 0 0]);
+        angular_frame_init_x2 = computeFrameAxisX(rotation_diff(1,:), angular_frame_init_x);
+        angular_frame_init_y = computeFrameAxisY(angular_frame_init_x, angular_frame_init_x2, [0 1 0]);
+        angular_frame_init_z = cross(angular_frame_init_x,angular_frame_init_y);
+        angular_frame_init_z = normalizeVector(angular_frame_init_z);
+        aligning_rot_matrix = ([angular_frame_init_x', angular_frame_init_y', angular_frame_init_z']);
+    elseif (select_method == 3) % not working
+        % transform the main axes with the relative rotation
+        x_axis_transformed = (R_init * R_orig' * [1 0 0]')';
+        y_axis_transformed = (R_init * R_orig' * [0 1 0]')';
+        angular_frame_x = computeFrameAxisX(rotation_diff(1,:), x_axis_transformed);
+        angular_frame_x2 = computeFrameAxisX(rotation_diff(2,:), angular_frame_x);
+        angular_frame_y = computeFrameAxisY(angular_frame_x, angular_frame_x2, y_axis_transformed);
+        angular_frame_z = cross(angular_frame_x,angular_frame_y);
+        angular_frame_z = normalizeVector(angular_frame_z);
+        aligning_rot_matrix = eye(3);
+    end
+else
+    aligning_rot_matrix = eye(3);
+end
+%--------------
+
+angular_frame_initial(1:3,1:3) = aligning_rot_matrix * ...
+    ([angular_frame_x', angular_frame_y', angular_frame_z']);
 
 % Initialize arrays to hold the invariant values
 linear_motion_invariant = zeros(num_samples-2,3);
 angular_motion_invariant = zeros(num_samples-2,3);
 
 % Compute invariant values for each sample
-for i = 1:num_samples-2  
+for i = 1:num_samples-2
     % Update frames based on new position or rotation
     linear_frame_x3 = computeFrameAxisX(position_diff(i+2,:), linear_frame_x2);
     linear_frame_y2 = computeFrameAxisY(linear_frame_x2, linear_frame_x3, linear_frame_y);
     linear_motion_invariant(i,:) = computeInvariants(position_diff(i,:), linear_frame_x, linear_frame_x2, linear_frame_y, linear_frame_y2);
-    
+
     linear_frame_x = linear_frame_x2;
     linear_frame_x2 = linear_frame_x3;
     linear_frame_y = linear_frame_y2;
@@ -69,7 +108,7 @@ for i = 1:num_samples-2
     angular_frame_x3 = computeFrameAxisX(rotation_diff(i+2,:), angular_frame_x2);
     angular_frame_y2 = computeFrameAxisY(angular_frame_x2, angular_frame_x3, angular_frame_y);
     angular_motion_invariant(i,:) = computeInvariants(rotation_diff(i,:), angular_frame_x, angular_frame_x2, angular_frame_y, angular_frame_y2);
-    
+
     angular_frame_x = angular_frame_x2;
     angular_frame_x2 = angular_frame_x3;
     angular_frame_y = angular_frame_y2;
