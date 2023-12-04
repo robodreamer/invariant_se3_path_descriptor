@@ -1204,7 +1204,7 @@ if (select_program == 6)
     % Define input parameters
     inputPoseData = struct('pos_data', pos_data, 'rotm_data', rotm_data);
     params = struct('Nframes', 50, 'smoothing', false, ...
-        'plot_comparison_invariants', true, 'weights', ones(6,1));
+        'plot_comparison_invariants', false, 'weights', ones(6,1));
 
     % initialize unit test
     testCase = matlab.unittest.TestCase.forInteractiveUse;
@@ -1249,11 +1249,49 @@ if (select_program == 6)
     verifyEqual(testCase, T_final, T_final_out, 'AbsTol', tol);
 
     %% each unit test
-    disp('Test 3 - rotation offsets in final pose')
+    disp('Test 3 -  offsets in initial pose')
+
+    % construct initial and final pose
+    pose_offset_init = [0.3, -0.4, 0.3, 45, 90, 30];  % [m] and [deg]
+    pose_offset_final = [0, 0, 0, 0, 0, 0]; % [m] and [deg]
+    T_init = constructPoseWithOffset(T_init_orig, pose_offset_init);
+    T_final = constructPoseWithOffset(T_final_orig, pose_offset_final);
+
+    % Generate adapted trajectory
+    result = generate_trajectory(inputPoseData, params, T_init, T_final);
+
+    % Check the result
+    T_init_out = [result.rotm_data(:,:,1), result.pos_data(1,:)'; 0 0 0 1];
+    T_final_out = [result.rotm_data(:,:,end), result.pos_data(end,:)'; 0 0 0 1];
+
+    verifyEqual(testCase, T_init, T_init_out, 'AbsTol', tol);
+    verifyEqual(testCase, T_final, T_final_out, 'AbsTol', tol);
+
+    %% each unit test
+    disp('Test 4 -  offsets in final pose')
 
     % construct initial and final pose
     pose_offset_init = [0, 0, 0, 0, 0, 0];  % [m] and [deg]
-    pose_offset_final = [0, 0, 0, 30, 0, 0]; % [m] and [deg]
+    pose_offset_final = [0.3, -0.4, 0.3, 45, 90, 30]; % [m] and [deg]
+    T_init = constructPoseWithOffset(T_init_orig, pose_offset_init);
+    T_final = constructPoseWithOffset(T_final_orig, pose_offset_final);
+
+    % Generate adapted trajectory
+    result = generate_trajectory(inputPoseData, params, T_init, T_final);
+
+    % Check the result
+    T_init_out = [result.rotm_data(:,:,1), result.pos_data(1,:)'; 0 0 0 1];
+    T_final_out = [result.rotm_data(:,:,end), result.pos_data(end,:)'; 0 0 0 1];
+
+    verifyEqual(testCase, T_init, T_init_out, 'AbsTol', tol);
+    verifyEqual(testCase, T_final, T_final_out, 'AbsTol', tol);
+
+    %% each unit test
+    disp('Test 4 -  offsets in both poses')
+
+    % construct initial and final pose
+    pose_offset_init = [0.3, -0.4, 0.3, 45, -60, 30];  % [m] and [deg]
+    pose_offset_final = [-0.2, 0.2, 0.6, 30, 60, -90]; % [m] and [deg]
     T_init = constructPoseWithOffset(T_init_orig, pose_offset_init);
     T_final = constructPoseWithOffset(T_final_orig, pose_offset_final);
 
@@ -1269,6 +1307,8 @@ if (select_program == 6)
 
     %% Plot the result trajectory after adaptation
 
+    close all;
+
     % trajectory 1
     path_first = struct();
     path_first.pos_data = result.pos_data_demo(1:end-3,:);
@@ -1282,10 +1322,10 @@ if (select_program == 6)
     path_data = {path_first, path_second};
     color_data = random_color(size(path_data,2),'jet',1232);
     legend_texts = {'The initial Traj', 'The Adapted Traj (DHB-NLP)'};
-    params = struct('auto_calculate_scale', false, 'scale', 2, ...
+    params_plot = struct('auto_calculate_scale', false, 'scale', 2, ...
         'show_rotation', true, 'show_coordinates', true);
     handle_paths = plot_se3_trajectories(path_data, color_data, ...
-        'Comparison on the results with the demo path', params);
+        'Comparison on the results with the demo path', params_plot);
 
     % overlay T_final
     SpatialRobotModel.drawFrame(T_final, 0.2, 3);
@@ -1352,19 +1392,17 @@ if (select_program == 7)
     for k = 1:numTests
         fprintf('Generating %d/%d-th trajectory!\n', k, numTests);
         % Generate random translation and rotation values
-        posOffset_init = SpatialRobotModel.randRange(3, -0.3, 0.3); % Random translation in the range
-        posOffset_final = SpatialRobotModel.randRange(3, 0, 0); % Random translation in the range
-        rotOffset_init = rad2deg(SpatialRobotModel.randRange(3, -45, 45)); % Random rotation in the range
-        rotOffset_final = rad2deg(SpatialRobotModel.randRange(3, 0, 0)); % Random rotation in the range
+        posOffset_init = SpatialRobotModel.randRange(3, 0., 0.); % Random translation in the range
+        posOffset_final = SpatialRobotModel.randRange(3, -0.3, 0.3); % Random translation in the range
+        rotOffset_init = rad2deg(SpatialRobotModel.randRange(3, 0., 0.)); % Random rotation in the range
+        rotOffset_final = rad2deg(SpatialRobotModel.randRange(3, -45, 45)); % Random rotation in the range
 
         % Apply random translation and rotation to initial and final transforms
-        T_init = SpatialRobotModel.transl(posOffset_init(1), posOffset_init(2), posOffset_init(3)) * ...
-             T_init_orig * ...
-             SpatialRobotModel.r2t(SpatialRobotModel.rpy2R(rotOffset_init(1), rotOffset_init(2), rotOffset_init(3)));
+        pose_offset_init = [posOffset_init, rotOffset_init];
+        pose_offset_final = [posOffset_final, rotOffset_final];
 
-        T_final = SpatialRobotModel.transl(posOffset_final(1), posOffset_final(2), posOffset_final(3)) * ...
-                  T_final_orig * ...
-                  SpatialRobotModel.r2t(SpatialRobotModel.rpy2R(rotOffset_final(1), rotOffset_final(2), rotOffset_final(3)));
+        T_init = constructPoseWithOffset(T_init_orig, pose_offset_init);
+        T_final = constructPoseWithOffset(T_final_orig, pose_offset_final);
 
         % Generate adapted trajectory
         result = generate_trajectory(inputPoseData, params, T_init, T_final);
@@ -1389,202 +1427,10 @@ end
 
 % Construct a pose with an offset in translation and rotation
 function poseNew = constructPoseWithOffset(pose, offset)
+rot_offset = deg2rad(offset(4:6));
 poseNew = SpatialRobotModel.transl(offset(1), offset(2), offset(3)) * pose * ...
-    SpatialRobotModel.r2t(SpatialRobotModel.rpy2R(offset(4), offset(5), offset(6)));
+    SpatialRobotModel.r2t(SpatialRobotModel.rpy2R(rot_offset(1), rot_offset(2), rot_offset(3)));
 end
-
-
-% Adapt the input trajectory for a given input and target pose
-% this method solves an NLP to find another path in SE3 that best preserves
-% the shape description represented by DHB invariant se3 path shape descriptor.
-function result = generate_trajectory(inputPoseData, params, T_init, T_final)
-
-    result = struct();
-
-    % get the position and rotation data from the input
-    pos_data_orig = inputPoseData.pos_data;
-    rotm_data_orig = inputPoseData.rotm_data;
-    N = size(pos_data_orig,1);
-    N_orig = N;
-
-    rvec_data_orig = zeros(N,3);
-    for i=1:N
-        rvec_data_orig(i, :) = rotationMatrixToVector(rotm_data_orig(:,:,i));
-    end
-
-    % resample the path
-    Nframes = params.Nframes;
-    timeNew = linspace(1, size(pos_data_orig,1), Nframes-3);
-    timeNew = [timeNew timeNew(end) timeNew(end) timeNew(end)];
-    pos_data = SpatialRobotModel.cubicInterp(pos_data_orig, 1:N, timeNew);
-    rvec_data = SpatialRobotModel.cubicInterp(rvec_data_orig, 1:N, timeNew);
-    N_orig = Nframes;
-    N = N_orig;
-
-    % resize the data
-    rotm_data = zeros(3,3,N);
-    for i=1:N
-        rvec = rvec_data(i,:);
-        rotm = rotationVectorToMatrix(rvec);
-        rotm_data(:,:,i) = rotm;
-    end
-
-    % smooth the data a bit
-    if (params.smoothing)
-        pos_data_orig = pos_data;
-        pos_data = smoothdata(pos_data, "sgolay", 10);
-        % rvec_data = smoothdata(rvec_data, "sgolay", 10);
-    end
-
-    % store the resampled input data
-    result.pos_data_demo = pos_data;
-    result.rotm_data_demo = rotm_data;
-    result.rvec_data_demo = rvec_data;
-
-    % get the pos diff data
-    pos_diff_data = diff(pos_data);
-
-    % Compute position based DHB invariants
-    [pos_invariant, rot_invariant, p_frame_init, R_frame_init] = ...
-        computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T_init);
-    invariants_demo = [pos_invariant, rot_invariant];
-
-    % transform the goal position
-    N = N_orig - 3;
-
-    %% Try trajectory adaptation with OCP
-
-    %%% construct an ocp with casadi
-
-    opti = casadi.Opti();
-
-    % Initial values
-    init_traj = [pos_data(1:N, :), rvec_data(1:N, :)];
-
-    % constraints
-    constraints = struct();
-    constraints.start_pose = init_traj(1,:);
-    % constraints.start_pose = [T_init(1:3,4)', ...
-        % rotationMatrixToVector(T_init(1:3,1:3))];
-    constraints.target_pose = [T_final(1:3,4)', ...
-        rotationMatrixToVector(T_final(1:3,1:3))];
-
-    % Define system states
-    p_DHB_var = cell(1,N);
-    rvec_DHB_var = cell(1,N);
-    U_var = opti.variable(N, 6);
-
-    for k=1:N
-        p_DHB_var{k} = opti.variable(1,3); % position
-        rvec_DHB_var{k} = opti.variable(1,3); % rotation vector
-    end
-
-    % Initialize linear and angular frames
-    linear_frame = p_frame_init;
-    angular_frame = R_frame_init;
-
-    % Apply dynamic constraints using the single step method
-    for k = 1:N-1
-        [new_linear_frame, new_angular_frame, new_position, new_rotation] = ...
-            reconstructTrajectorySingleStep(U_var(k,:), linear_frame, angular_frame, 'pos');
-
-        % Update frames for next iteration
-        linear_frame = new_linear_frame;
-        angular_frame = new_angular_frame;
-
-        % Set the dynamic constraints
-        opti.subject_to(p_DHB_var{k+1} == new_position);
-        opti.subject_to(rvec_DHB_var{k+1} == new_rotation);
-    end
-
-    % % Path smoothness constraints -- Experimental to see if any sharp
-    % % corner in the reconstructed path could be removed
-    % if (false)
-    %     smoothness_limit = 3e-1; % Adjust this parameter as needed
-    %     for k = 2:N-1
-    %         % Position smoothness constraint
-    %         pos_diff_prev = p_DHB_var{k} - p_DHB_var{k-1};
-    %         pos_diff_next = p_DHB_var{k+1} - p_DHB_var{k};
-    %         opti.subject_to(-smoothness_limit <= pos_diff_next - pos_diff_prev <= smoothness_limit);
-    %
-    %         % % Rotation smoothness constraint
-    %         % rot_diff_prev = rvec_DHB_var{k} - rvec_DHB_var{k-1};
-    %         % rot_diff_next = rvec_DHB_var{k+1} - rvec_DHB_var{k};
-    %         % opti.subject_to(-smoothness_limit <= rot_diff_next - rot_diff_prev <= smoothness_limit);
-    %     end
-    % end
-
-    % Constraints on the start and end pose
-    opti.subject_to(p_DHB_var{1} == constraints.start_pose(1:3));
-    opti.subject_to(rvec_DHB_var{1} == constraints.start_pose(4:6));
-    opti.subject_to(p_DHB_var{end} == constraints.target_pose(1:3));
-    opti.subject_to(rvec_DHB_var{end} == constraints.target_pose(4:6));
-
-    % Construct objective
-    objective = 0;
-    for k=1:N
-        e = U_var(k,:) - invariants_demo(k,:); % invariants error
-        e_weighted = sqrt(params.weights).*e';
-        objective = objective + e_weighted'*e_weighted;
-    end
-
-    % Initialize states and controls
-    for k=1:N
-        opti.set_initial(p_DHB_var{k}, init_traj(k,1:3));
-        opti.set_initial(rvec_DHB_var{k}, init_traj(k,4:6));
-        opti.set_initial(U_var(k,:), invariants_demo(k,:));
-    end
-
-    opti.minimize(objective);
-    opti.solver('ipopt', struct(), struct('tol', 1e-5));
-
-    % Solve the NLP
-    sol = opti.solve();
-
-    % get the updated invariants
-    result.invariants_demo = invariants_demo;
-    result.invariants = zeros(size(invariants_demo));
-    result.invariants = sol.value(U_var);
-
-    %%% compare the DHB invariants before and after optimization
-
-    if (params.plot_comparison_invariants)
-        % Plot the invariants
-        figure('Name', 'Comparison on the invariants');
-
-        dhbInvNames = {'m_p' '\theta_p^1' '\theta_p^2', ...
-            'm_\omega' '\theta_\omega^1' '\theta_\omega^2'};
-        for i=1:6
-            subplot(6,1,i)
-            plot(invariants_demo(:,i))
-            hold on;
-            plot(result.invariants(:,i))
-            ylabel(dhbInvNames{i});
-            legend('original', 'optimized(casadi)');
-            grid on
-        end
-    end
-
-    %-- transform the solution to the se3 data
-
-    % reconstruct the data
-    [pos_r_opt_data, rvec_r_opt_data] = reconstructTrajectoryMex_mex(result.invariants, ...
-        p_frame_init, R_frame_init, 'pos');
-
-    % get the rotation matrices
-    rotm_r_opt_data = zeros(3,3,N);
-    for i=1:N
-        rvec = rvec_r_opt_data(i,:);
-        rotm = rotationVectorToMatrix(rvec);
-        rotm_r_opt_data(:,:,i) = rotm;
-    end
-
-    % construct the result
-    result.pos_data = pos_r_opt_data;
-    result.rotm_data = rotm_r_opt_data;
-    result.rvec_data = rvec_r_opt_data;
-end
-
 
 % a function that converts rotation vector data to quaternion vector data
 function qt_r_data = rvecdata2qt(rvec_r_data)

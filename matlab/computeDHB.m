@@ -116,7 +116,7 @@ end
 
 end
 
-%% Compute the three invariant values given linear or angular frame axes (x,y)
+%%% Compute the three invariant values given linear or angular frame axes (x,y)
 function invariants = computeInvariants(vector_u, frame_x, frame_x2, frame_y, frame_y2)
     magnitude = dot(frame_x, vector_u);
     angle1 = atan2(dot(cross(frame_x, frame_x2), frame_y), dot(frame_x, frame_x2));
@@ -124,7 +124,7 @@ function invariants = computeInvariants(vector_u, frame_x, frame_x2, frame_y, fr
     invariants = [magnitude, angle1, angle2];
 end
 
-%% Compute the x axis of linear or angular frame
+%%% Compute the x axis of linear or angular frame
 function frame_x = computeFrameAxisX(vector_u, default_x)
     frame_x = vector_u;
     norm_frame_x = norm(frame_x);
@@ -135,13 +135,13 @@ function frame_x = computeFrameAxisX(vector_u, default_x)
     end
 end
 
-%% Compute the y axis of linear or angular frame
+%%% Compute the y axis of linear or angular frame
 function frame_y = computeFrameAxisY(frame_x, frame_x2, default_y)
     frame_y = cross(frame_x, frame_x2);
     frame_y = normalizeVector(frame_y, default_y);
 end
 
-%% Normalize a vector, replace with default if below threshold
+%%% Normalize a vector, replace with default if below threshold
 function normalized_vector = normalizeVector(vector, default_vector)
     norm_vector = norm(vector);
     if(norm_vector > 1e-10)
