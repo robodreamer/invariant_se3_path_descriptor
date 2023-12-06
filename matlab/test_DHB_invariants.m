@@ -1169,10 +1169,24 @@ if (select_program == 6)
     addpath(genpath(pwd));
     ccc;
 
-    % loading pose data, format: rows=samples, columns=x|y|z|qx|qy|qz|qw
-    % note: you can also use marker data together with the function markers2pose.m
+    use_randomly_generated_data = true;
+    if (use_randomly_generated_data)
+        N = 100; % Number of poses
+        numWaypoints = 5; % Number of waypoints
+        positionRange = [-1, 1]; % Range for x, y, z coordinates
+        time = linspace(0, N, N);
 
-    load data/vive_data.mat
+        % get the generated se3 path
+        measured_pose_coordinates = [time', generateRandomComplexSE3Path(N, numWaypoints, positionRange)];
+    else
+        % loading pose data, format: rows=samples, columns=x|y|z|qx|qy|qz|qw
+
+        load data/vive_data.mat
+        % load data/pouring_motion_data.mat
+        % load data/scooping_motion_data.mat
+        % load data/curved_motion_data.mat
+    end
+
     N = length(measured_pose_coordinates);
     dt = 1/60; % timestep
 
@@ -1197,14 +1211,14 @@ if (select_program == 6)
     T_init_orig = [rotm_data(:,:,1) pos_data(1,:)'; 0 0 0 1];
     T_final_orig = [rotm_data(:,:,end-3) pos_data(end-3,:)'; 0 0 0 1];
 
-    %% call the refactored method for trajectory adaptation
+    %- call the refactored method for trajectory adaptation
 
     close all;
 
     % Define input parameters
     inputPoseData = struct('pos_data', pos_data, 'rotm_data', rotm_data);
-    params = struct('Nframes', 50, 'smoothing', false, ...
-        'plot_comparison_invariants', false, 'weights', ones(6,1));
+    params = struct('Nframes', 100, 'smoothing', false, ...
+        'plot_comparison_invariants', true, 'weights', ones(6,1));
 
     % initialize unit test
     testCase = matlab.unittest.TestCase.forInteractiveUse;
@@ -1234,7 +1248,7 @@ if (select_program == 6)
 
     % construct initial and final pose
     pose_offset_init = [0.3, -0.2, 0.1, 0, 0, 0];  % [m] and [deg]
-    pose_offset_final = [0.2, 0.1, -0.3, 0, 0, 0]; % [m] and [deg]
+    pose_offset_final = [0.2, 0.3, -0.3, 0, 0, 0]; % [m] and [deg]
     T_init = constructPoseWithOffset(T_init_orig, pose_offset_init);
     T_final = constructPoseWithOffset(T_final_orig, pose_offset_final);
 
@@ -1272,7 +1286,7 @@ if (select_program == 6)
 
     % construct initial and final pose
     pose_offset_init = [0, 0, 0, 0, 0, 0];  % [m] and [deg]
-    pose_offset_final = [0.3, -0.4, 0.3, 45, 90, 30]; % [m] and [deg]
+    pose_offset_final = [0.3, -0.2, 0.3, 45, 60, 30]; % [m] and [deg]
     T_init = constructPoseWithOffset(T_init_orig, pose_offset_init);
     T_final = constructPoseWithOffset(T_final_orig, pose_offset_final);
 
@@ -1290,8 +1304,8 @@ if (select_program == 6)
     disp('Test 4 -  offsets in both poses')
 
     % construct initial and final pose
-    pose_offset_init = [0.3, -0.4, 0.3, 45, -60, 30];  % [m] and [deg]
-    pose_offset_final = [-0.2, 0.2, 0.6, 30, 60, -90]; % [m] and [deg]
+    pose_offset_init = [-0.3, -0.4, 0.3, 45, -40, 30];  % [m] and [deg]
+    pose_offset_final = [-0.2, 0.2, -0.5, 30, 60, -40]; % [m] and [deg]
     T_init = constructPoseWithOffset(T_init_orig, pose_offset_init);
     T_final = constructPoseWithOffset(T_final_orig, pose_offset_final);
 
@@ -1307,7 +1321,7 @@ if (select_program == 6)
 
     %% Plot the result trajectory after adaptation
 
-    close all;
+    % close all;
 
     % trajectory 1
     path_first = struct();
@@ -1322,7 +1336,7 @@ if (select_program == 6)
     path_data = {path_first, path_second};
     color_data = random_color(size(path_data,2),'jet',1232);
     legend_texts = {'The initial Traj', 'The Adapted Traj (DHB-NLP)'};
-    params_plot = struct('auto_calculate_scale', false, 'scale', 2, ...
+    params_plot = struct('auto_calculate_scale', true, 'scale', 2, ...
         'show_rotation', true, 'show_coordinates', true);
     handle_paths = plot_se3_trajectories(path_data, color_data, ...
         'Comparison on the results with the demo path', params_plot);
@@ -1342,10 +1356,20 @@ if (select_program == 7)
     addpath(genpath(pwd));
     ccc;
 
-    % loading pose data, format: rows=samples, columns=x|y|z|qx|qy|qz|qw
-    % note: you can also use marker data together with the function markers2pose.m
+    use_randomly_generated_data = true;
+    if (use_randomly_generated_data)
+        N = 100; % Number of time steps
+        numWaypoints = 10; % Number of waypoints
+        positionRange = [-1, 1]; % Range for x, y, z coordinates
+        time = linspace(0, N, N);
 
-    load data/vive_data.mat
+        % get the generated se3 path
+        measured_pose_coordinates = [time', generateRandomComplexSE3Path(N, numWaypoints, positionRange)];
+    else
+        % loading pose data, format: rows=samples, columns=x|y|z|qx|qy|qz|qw
+
+        load data/vive_data.mat
+    end
     N = length(measured_pose_coordinates);
     dt = 1/60; % timestep
 
@@ -1375,11 +1399,11 @@ if (select_program == 7)
     close all;
     % Define input parameters
     inputPoseData = struct('pos_data', pos_data, 'rotm_data', rotm_data);
-    params = struct('Nframes', 30, 'smoothing', true, ...
+    params = struct('Nframes', 50, 'smoothing', true, ...
         'plot_comparison_invariants', false, 'weights', [1 1 1 1 1 1]');
 
     % loop for different transforms to the init and target poses
-    numTests = 5;
+    numTests = 10;
 
     % trajectory original
     path_data = cell(1, numTests + 1);
@@ -1388,7 +1412,7 @@ if (select_program == 7)
     path_data{1}.rot_data = rotm_data;
     legend_texts = {'The initial Traj'};
 
-    rng(1235);
+    % rng(1235);
     for k = 1:numTests
         fprintf('Generating %d/%d-th trajectory!\n', k, numTests);
         % Generate random translation and rotation values
@@ -1501,4 +1525,59 @@ function cost = cost_shape_descriptor_mex2(pos_data, rvec_data, T0, pos_invarian
 
     % apply some weight for importance
     cost = cost_error + cost_path_length;
+end
+
+function se3Path = generateRandomComplexSE3Path(N, numWaypoints, positionRange)
+    % Generates a complex and smooth SE3 path with random waypoints.
+    % N - Number of poses in the path
+    % numWaypoints - Number of waypoints to generate
+    % positionRange - Range for position coordinates, e.g., [-10 10]
+
+    % Randomly generate position waypoints
+    waypoints = positionRange(1) + (positionRange(2) - positionRange(1)) .* rand(numWaypoints, 3);
+
+    % Randomly generate orientation waypoints
+    orientationWaypoints = arrayfun(@(x) generateRandomUnitQuaternion(), 1:numWaypoints, 'UniformOutput', false);
+
+    % Interpolate the path
+    se3Path = interpolateSE3Path(N, waypoints, orientationWaypoints);
+end
+
+function se3Path = interpolateSE3Path(N, waypoints, orientationWaypoints)
+    % Time vector for waypoints and path
+    tWaypoints = linspace(0, 1, size(waypoints, 1));
+    tPath = linspace(0, 1, N);
+
+    % Spline interpolation for positions
+    positionPath = interp1(tWaypoints, waypoints, tPath, 'spline');
+
+    % SLERP interpolation for orientations
+    quatPath = slerpPath(orientationWaypoints, tPath, tWaypoints);
+
+    % Combine position and quaternion paths
+    se3Path = [positionPath, cell2mat(quatPath')];
+end
+
+function quat = generateRandomUnitQuaternion()
+    % Generates a random unit quaternion
+    quat = [randn(1, 3), rand];
+    quat = quat / norm(quat);
+end
+
+function quatPath = slerpPath(controlQuats, tPath, tControl)
+    % Interpolates a path of quaternions using slerp
+    quatPath = cell(1, length(tPath));
+    for i = 1:length(tPath)
+        % Find the interval in the control points
+        t = tPath(i);
+        idx = find(tControl <= t, 1, 'last');
+        if idx == length(controlQuats)
+            quatPath{i} = controlQuats{end};
+        else
+            t0 = tControl(idx);
+            t1 = tControl(idx + 1);
+            frac = (t - t0) / (t1 - t0);
+            quatPath{i} = quatinterp(controlQuats{idx}, controlQuats{idx + 1}, frac, 'slerp');
+        end
+    end
 end
