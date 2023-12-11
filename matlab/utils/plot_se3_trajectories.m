@@ -33,7 +33,7 @@ lencz = 0.060*scale;
 len = 1.2*lencx;
 
 % Setup figure
-figure; clf;
+hFig = figure; clf;
 set(gcf,'units','normalized','outerposition',[0 0.2 0.5 0.7]);
 hold on; axis equal; view(-161,25); grid on; box on;
 xlabel('$x$[m]','Interpreter','LaTex','FontSize',18)
@@ -121,4 +121,6 @@ axis([minX - margin, maxX + margin, ...
 if exist('legend_texts', 'var') && ~isempty(legend_texts)
     legend(handle_plot, legend_texts, 'Location', 'best');
 end
+
+dragzoom(hFig);
 end
