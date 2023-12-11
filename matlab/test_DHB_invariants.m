@@ -1169,7 +1169,7 @@ if (select_program == 6)
     addpath(genpath(pwd));
     ccc;
 
-    use_randomly_generated_data = true;
+    use_randomly_generated_data = false;
     if (use_randomly_generated_data)
         N = 100; % Number of poses
         numWaypoints = 5; % Number of waypoints
@@ -1560,7 +1560,7 @@ end
 
 function quat = generateRandomUnitQuaternion()
     % Generates a random unit quaternion
-    quat = [randn(1, 3), rand];
+    quat = [rand; randn(3, 1)];
     quat = quat / norm(quat);
 end
 
@@ -1572,12 +1572,14 @@ function quatPath = slerpPath(controlQuats, tPath, tControl)
         t = tPath(i);
         idx = find(tControl <= t, 1, 'last');
         if idx == length(controlQuats)
-            quatPath{i} = controlQuats{end};
+            qt = controlQuats{end};
+            quatPath{i} = [qt(1:3)', qt(4)];
         else
             t0 = tControl(idx);
             t1 = tControl(idx + 1);
             frac = (t - t0) / (t1 - t0);
-            quatPath{i} = quatinterp(controlQuats{idx}, controlQuats{idx + 1}, frac, 'slerp');
+            qt = SpatialRobotModel.quatInterp(controlQuats{idx}, controlQuats{idx + 1}, frac);
+            quatPath{i} = [qt(1:3)', qt(4)];
         end
     end
 end
