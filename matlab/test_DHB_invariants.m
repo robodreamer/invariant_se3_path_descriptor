@@ -1359,7 +1359,7 @@ if (select_program == 7)
     use_randomly_generated_data = true;
     if (use_randomly_generated_data)
         N = 100; % Number of time steps
-        numWaypoints = 10; % Number of waypoints
+        numWaypoints = 6; % Number of waypoints
         positionRange = [-1, 1]; % Range for x, y, z coordinates
         time = linspace(0, N, N);
 
@@ -1403,7 +1403,7 @@ if (select_program == 7)
         'plot_comparison_invariants', false, 'weights', [1 1 1 1 1 1]');
 
     % loop for different transforms to the init and target poses
-    numTests = 10;
+    numTests = 5;
 
     % trajectory original
     path_data = cell(1, numTests + 1);
@@ -1412,13 +1412,17 @@ if (select_program == 7)
     path_data{1}.rot_data = rotm_data;
     legend_texts = {'The initial Traj'};
 
+    % initialize unit test
+    testCase = matlab.unittest.TestCase.forInteractiveUse;
+    tol = 1e-2*ones(4,4); % this can be reduced futher later
+
     % rng(1235);
     for k = 1:numTests
         fprintf('Generating %d/%d-th trajectory!\n', k, numTests);
         % Generate random translation and rotation values
-        posOffset_init = SpatialRobotModel.randRange(3, 0., 0.); % Random translation in the range
+        posOffset_init = SpatialRobotModel.randRange(3, -0.3, 0.3); % Random translation in the range
         posOffset_final = SpatialRobotModel.randRange(3, -0.3, 0.3); % Random translation in the range
-        rotOffset_init = rad2deg(SpatialRobotModel.randRange(3, 0., 0.)); % Random rotation in the range
+        rotOffset_init = rad2deg(SpatialRobotModel.randRange(3, -0.3, 0.3)); % Random rotation in the range
         rotOffset_final = rad2deg(SpatialRobotModel.randRange(3, -45, 45)); % Random rotation in the range
 
         % Apply random translation and rotation to initial and final transforms
@@ -1430,6 +1434,13 @@ if (select_program == 7)
 
         % Generate adapted trajectory
         result = generate_trajectory(inputPoseData, params, T_init, T_final);
+
+        % Check the result
+        T_init_out = [result.rotm_data(:,:,1), result.pos_data(1,:)'; 0 0 0 1];
+        T_final_out = [result.rotm_data(:,:,end), result.pos_data(end,:)'; 0 0 0 1];
+
+        verifyEqual(testCase, T_init, T_init_out, 'AbsTol', tol);
+        verifyEqual(testCase, T_final, T_final_out, 'AbsTol', tol);
 
         % store the result data
         path_data{k + 1} = struct();

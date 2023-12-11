@@ -49,7 +49,7 @@ function result = generate_trajectory(inputPoseData, params, T_init, T_final)
 
     % Compute position based DHB invariants
     [pos_invariant, rot_invariant, p_frame_init, R_frame_init] = ...
-        computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T_init);
+        computeDHBMex_mex(pos_diff_data, rvec_data(1:end-1,:), 'pos', T_init);
     invariants_demo = [pos_invariant, rot_invariant];
 
     % update the number of output
@@ -84,6 +84,10 @@ function result = generate_trajectory(inputPoseData, params, T_init, T_final)
     linear_frame = p_frame_init;
     angular_frame = R_frame_init;
 
+    % Constraints on the start pose
+    opti.subject_to(p_DHB_var{1} == constraints.start_pose(1:3));
+    opti.subject_to(rvec_DHB_var{1} == constraints.start_pose(4:6));
+
     % Apply dynamic constraints using the single step method
     for k = 1:N-1
         [new_linear_frame, new_angular_frame, new_position, new_rotation] = ...
@@ -98,9 +102,7 @@ function result = generate_trajectory(inputPoseData, params, T_init, T_final)
         opti.subject_to(rvec_DHB_var{k+1} == new_rotation);
     end
 
-    % Constraints on the start and end pose
-    opti.subject_to(p_DHB_var{1} == constraints.start_pose(1:3));
-    opti.subject_to(rvec_DHB_var{1} == constraints.start_pose(4:6));
+    % Constraints on the end pose
     opti.subject_to(p_DHB_var{end} == constraints.target_pose(1:3));
     opti.subject_to(rvec_DHB_var{end} == constraints.target_pose(4:6));
 
@@ -130,7 +132,7 @@ function result = generate_trajectory(inputPoseData, params, T_init, T_final)
     result.invariants = zeros(size(invariants_demo));
     result.invariants = sol.value(U_var);
 
-    %%% compare the DHB invariants before and after optimization
+    % compare the DHB invariants before and after optimization
 
     if (params.plot_comparison_invariants)
         % Plot the invariants
@@ -149,34 +151,16 @@ function result = generate_trajectory(inputPoseData, params, T_init, T_final)
         end
     end
 
-    get_se3_from_reconstruction = false;
-    if get_se3_from_reconstruction
-        %-- transform the solution to the se3 data
-
-        % reconstruct the data
-        [pos_r_opt_data, rvec_r_opt_data] = reconstructTrajectoryMex_mex(result.invariants, ...
-            p_frame_init, R_frame_init, 'pos');
-
-        % get the rotation matrices
-        rotm_r_opt_data = zeros(3,3,N);
-        for i=1:N
-            rvec = rvec_r_opt_data(i,:);
-            rotm = rotationVectorToMatrix(rvec);
-            rotm_r_opt_data(:,:,i) = rotm;
-        end
-    else
-
-        %-- get the state data
-        pos_r_opt_data = zeros(N,3);
-        rotm_r_opt_data = zeros(3,3,N);
-        rvec_r_opt_data = zeros(N,3);
-        for i=1:N
-            pos_r_opt_data(i,:) = sol.value(p_DHB_var{i});
-            rvec = sol.value(rvec_DHB_var{i});
-            rotm = rotationVectorToMatrix(rvec);
-            rotm_r_opt_data(:,:,i) = rotm;
-            rvec_r_opt_data(i,:) = rvec;
-        end
+    %-- get the state data
+    pos_r_opt_data = zeros(N,3);
+    rotm_r_opt_data = zeros(3,3,N);
+    rvec_r_opt_data = zeros(N,3);
+    for i=1:N
+        pos_r_opt_data(i,:) = sol.value(p_DHB_var{i});
+        rvec = sol.value(rvec_DHB_var{i});
+        rotm = rotationVectorToMatrix(rvec);
+        rotm_r_opt_data(:,:,i) = rotm;
+        rvec_r_opt_data(i,:) = rvec;
     end
 
     % construct the result

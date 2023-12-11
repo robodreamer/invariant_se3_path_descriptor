@@ -48,46 +48,7 @@ angular_frame_y = computeFrameAxisY(angular_frame_x, angular_frame_x2, [0 1 0]);
 angular_frame_z = cross(angular_frame_x,angular_frame_y);
 angular_frame_z = normalizeVector(angular_frame_z);
 
-%---- this is experimental to reflect the initial rotation ----
-find_aligning_rot_matrix = false;
-if (find_aligning_rot_matrix && strcmp(method, 'pos'))
-    select_method = 1;
-    R_init = initial_pose(1:3,1:3);
-    R_orig = rotationVectorToMatrix(rotation_diff(1,:));
-
-    if (select_method == 1)
-        % use relative rotation between original and the desired initial
-
-        R_align = R_init * R_orig';
-        R_temp = ([angular_frame_x', angular_frame_y', angular_frame_z']);
-        aligning_rot_matrix = R_temp' * R_align * R_temp;
-    elseif (select_method == 2) % not working
-        % apply the same construction to between the desired initial and
-        % original
-        rvec_init = rotationMatrixToVector(R_init);
-        angular_frame_init_x = computeFrameAxisX(rvec_init, [1 0 0]);
-        angular_frame_init_x2 = computeFrameAxisX(rotation_diff(1,:), angular_frame_init_x);
-        angular_frame_init_y = computeFrameAxisY(angular_frame_init_x, angular_frame_init_x2, [0 1 0]);
-        angular_frame_init_z = cross(angular_frame_init_x,angular_frame_init_y);
-        angular_frame_init_z = normalizeVector(angular_frame_init_z);
-        aligning_rot_matrix = ([angular_frame_init_x', angular_frame_init_y', angular_frame_init_z']);
-    elseif (select_method == 3) % not working
-        % transform the main axes with the relative rotation
-        x_axis_transformed = (R_init * R_orig' * [1 0 0]')';
-        y_axis_transformed = (R_init * R_orig' * [0 1 0]')';
-        angular_frame_x = computeFrameAxisX(rotation_diff(1,:), x_axis_transformed);
-        angular_frame_x2 = computeFrameAxisX(rotation_diff(2,:), angular_frame_x);
-        angular_frame_y = computeFrameAxisY(angular_frame_x, angular_frame_x2, y_axis_transformed);
-        angular_frame_z = cross(angular_frame_x,angular_frame_y);
-        angular_frame_z = normalizeVector(angular_frame_z);
-        aligning_rot_matrix = eye(3);
-    end
-else
-    aligning_rot_matrix = eye(3);
-end
-%--------------
-
-angular_frame_initial(1:3,1:3) = aligning_rot_matrix * ...
+angular_frame_initial(1:3,1:3) = ...
     ([angular_frame_x', angular_frame_y', angular_frame_z']);
 
 % Initialize arrays to hold the invariant values

@@ -2,6 +2,9 @@
 % This script reconstructs the trajectory of a rigid body in 3D space from
 % its Denavit–Hartenberg inspired Bidirectional (DHB) invariant representation.
 
+% This function is to test the single step reconstruction used for optimization
+% problem formulation with Casadi.
+
 %% Reconstruct Cartesian trajectory (position or velocity)
 % Inputs:
 %        dhb_invariants - Matrix of DHB invariants ([N-2]x6 array)
@@ -20,6 +23,8 @@ function [trajectory_position, trajectory_rotation] = reconstructTrajectoryCasad
     % Use CasADi SX or MX for trajectory arrays
     trajectory_position = casadi.SX.zeros(num_samples,3);
     trajectory_rotation = casadi.SX.zeros(num_samples,3);
+
+    % uncomment the following for non-casadi calls
     % trajectory_position = zeros(num_samples,3);
     % trajectory_rotation = zeros(num_samples,3);
 
