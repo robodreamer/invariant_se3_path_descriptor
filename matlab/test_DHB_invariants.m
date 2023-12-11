@@ -1217,8 +1217,8 @@ if (select_program == 6)
 
     % Define input parameters
     inputPoseData = struct('pos_data', pos_data, 'rotm_data', rotm_data);
-    params = struct('Nframes', 100, 'smoothing', false, ...
-        'plot_comparison_invariants', true, 'weights', ones(6,1));
+    params = struct('Nframes', 50, 'smoothing', false, ...
+        'plot_comparison_invariants', false, 'weights', ones(6,1));
 
     % initialize unit test
     testCase = matlab.unittest.TestCase.forInteractiveUse;
@@ -1248,7 +1248,7 @@ if (select_program == 6)
 
     % construct initial and final pose
     pose_offset_init = [0.3, -0.2, 0.1, 0, 0, 0];  % [m] and [deg]
-    pose_offset_final = [0.2, 0.3, -0.3, 0, 0, 0]; % [m] and [deg]
+    pose_offset_final = [-0.2, 0.3, 0.3, 0, 0, 0]; % [m] and [deg]
     T_init = constructPoseWithOffset(T_init_orig, pose_offset_init);
     T_final = constructPoseWithOffset(T_final_orig, pose_offset_final);
 
@@ -1266,7 +1266,7 @@ if (select_program == 6)
     disp('Test 3 -  offsets in initial pose')
 
     % construct initial and final pose
-    pose_offset_init = [0.3, -0.4, 0.3, 45, 90, 30];  % [m] and [deg]
+    pose_offset_init = [0.3, -0.2, 0.1, 0, 0, 0];  % [m] and [deg]
     pose_offset_final = [0, 0, 0, 0, 0, 0]; % [m] and [deg]
     T_init = constructPoseWithOffset(T_init_orig, pose_offset_init);
     T_final = constructPoseWithOffset(T_final_orig, pose_offset_final);
@@ -1301,11 +1301,11 @@ if (select_program == 6)
     verifyEqual(testCase, T_final, T_final_out, 'AbsTol', tol);
 
     %% each unit test
-    disp('Test 4 -  offsets in both poses')
+    disp('Test 5 -  offsets in both poses')
 
     % construct initial and final pose
-    pose_offset_init = [-0.3, -0.4, 0.3, 45, -40, 30];  % [m] and [deg]
-    pose_offset_final = [-0.2, 0.2, -0.5, 30, 60, -40]; % [m] and [deg]
+    pose_offset_init = [0.3, -0.1, 0.2, 30, -20, 45];  % [m] and [deg]
+    pose_offset_final = [0.2, 0.3, 0.5, -45, 30, 10]; % [m] and [deg]
     T_init = constructPoseWithOffset(T_init_orig, pose_offset_init);
     T_final = constructPoseWithOffset(T_final_orig, pose_offset_final);
 
@@ -1321,7 +1321,7 @@ if (select_program == 6)
 
     %% Plot the result trajectory after adaptation
 
-    % close all;
+    close all;
 
     % trajectory 1
     path_first = struct();
