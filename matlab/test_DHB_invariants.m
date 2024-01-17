@@ -1218,7 +1218,7 @@ if (select_program == 6)
     % Define input parameters
     inputPoseData = struct('pos_data', pos_data, 'rotm_data', rotm_data);
     params = struct('Nframes', 50, 'smoothing', false, ...
-        'plot_comparison_invariants', false, 'weights', ones(6,1));
+        'plot_comparison_invariants', true, 'weights', ones(6,1));
 
     % initialize unit test
     testCase = matlab.unittest.TestCase.forInteractiveUse;
@@ -1266,7 +1266,7 @@ if (select_program == 6)
     disp('Test 3 -  offsets in initial pose')
 
     % construct initial and final pose
-    pose_offset_init = [0.3, -0.2, 0.1, 0, 0, 0];  % [m] and [deg]
+    pose_offset_init = [0.3, -0.2, 0.1, 30, 20, 40];  % [m] and [deg]
     pose_offset_final = [0, 0, 0, 0, 0, 0]; % [m] and [deg]
     T_init = constructPoseWithOffset(T_init_orig, pose_offset_init);
     T_final = constructPoseWithOffset(T_final_orig, pose_offset_final);
@@ -1359,7 +1359,7 @@ if (select_program == 7)
     use_randomly_generated_data = true;
     if (use_randomly_generated_data)
         N = 100; % Number of time steps
-        numWaypoints = 6; % Number of waypoints
+        numWaypoints = 5; % Number of waypoints
         positionRange = [-1, 1]; % Range for x, y, z coordinates
         time = linspace(0, N, N);
 
@@ -1403,7 +1403,7 @@ if (select_program == 7)
         'plot_comparison_invariants', false, 'weights', [1 1 1 1 1 1]');
 
     % loop for different transforms to the init and target poses
-    numTests = 5;
+    numTests = 3;
 
     % trajectory original
     path_data = cell(1, numTests + 1);
@@ -1415,15 +1415,19 @@ if (select_program == 7)
     % initialize unit test
     testCase = matlab.unittest.TestCase.forInteractiveUse;
     tol = 1e-2*ones(4,4); % this can be reduced futher later
+    HALF_RANGE_POS = 0.3;
+    HALF_RANGE_ROT = 45;
 
     % rng(1235);
+    result_data = cell(numTests, 1);
     for k = 1:numTests
+
         fprintf('Generating %d/%d-th trajectory!\n', k, numTests);
         % Generate random translation and rotation values
-        posOffset_init = SpatialRobotModel.randRange(3, -0.3, 0.3); % Random translation in the range
-        posOffset_final = SpatialRobotModel.randRange(3, -0.3, 0.3); % Random translation in the range
-        rotOffset_init = rad2deg(SpatialRobotModel.randRange(3, -0.3, 0.3)); % Random rotation in the range
-        rotOffset_final = rad2deg(SpatialRobotModel.randRange(3, -45, 45)); % Random rotation in the range
+        posOffset_init = SpatialRobotModel.randRange(3, -HALF_RANGE_POS, HALF_RANGE_POS); % Random translation in the range
+        posOffset_final = SpatialRobotModel.randRange(3, -HALF_RANGE_POS, HALF_RANGE_POS); % Random translation in the range
+        rotOffset_init = SpatialRobotModel.randRange(3, -HALF_RANGE_ROT, HALF_RANGE_ROT); % Random rotation in the range
+        rotOffset_final = SpatialRobotModel.randRange(3, -HALF_RANGE_ROT, HALF_RANGE_ROT); % Random rotation in the range
 
         % Apply random translation and rotation to initial and final transforms
         pose_offset_init = [posOffset_init, rotOffset_init];
@@ -1447,17 +1451,54 @@ if (select_program == 7)
         path_data{k + 1}.pos_data = result.pos_data;
         path_data{k + 1}.rot_data = result.rotm_data;
         legend_texts{k + 1} = sprintf('%d-th Adaptated Path', k);
+        result_data{k} = result;
     end
 
     %-- Plot the trajectory after reconstruction
     color_data = random_color(size(path_data,2),'jet',1232);
 
-    params = struct('auto_calculate_scale', false, 'scale', 1, ...
+    params = struct('auto_calculate_scale', false, 'scale', 2, ...
         'show_rotation', true, 'show_coordinates', false);
     handle_paths = plot_se3_trajectories(path_data, color_data, ...
         'Comparison on the results with the demo path', params);
 
     legend(handle_paths, legend_texts, 'Location', 'best');
+
+    % -- Plot the invariants and se3 data
+    plot_invariants = true;
+    if (plot_invariants)
+        % Plot the invariants
+        figure('NumberTitle', 'off', 'Name', 'DHB Invariants');
+
+        dhbInvNames = {'m_p' '\theta_p^1' '\theta_p^2' 'm_{\omega}' '\theta_{\omega}^1' '\theta_{\omega}^1'};
+        for k=1:numTests
+            invariants_pos = result_data{k}.invariants;
+            for i=1:6
+                subplot(2,3,i)
+                plot(invariants_pos(:,i),'LineWidth',2)
+                hold on;
+                ylabel(dhbInvNames{i});
+                grid on
+            end
+        end
+
+        % plot SE3 coordinate paths
+        figure('NumberTitle', 'off', 'Name', 'SE3 Paths');
+        coordNames = {'x' 'y' 'z' 'rx' 'ry' 'rz'};
+        for k=1:numTests
+            for i=1:6
+                subplot(2,3,i)
+                if (i < 4)
+                    plot(result_data{k}.pos_data(:,i),'LineWidth',2)
+                else
+                    plot(result_data{k}.rvec_data(:,i-3),'LineWidth',2)
+                end
+                hold on;
+                ylabel(coordNames{i});
+                grid on
+            end
+        end
+    end
 end
 
 % Construct a pose with an offset in translation and rotation
