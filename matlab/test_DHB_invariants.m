@@ -1403,7 +1403,7 @@ if (select_program == 7)
         'plot_comparison_invariants', false, 'weights', [1 1 1 1 1 1]');
 
     % loop for different transforms to the init and target poses
-    numTests = 3;
+    numTests = 10;
 
     % trajectory original
     path_data = cell(1, numTests + 1);
@@ -1499,6 +1499,233 @@ if (select_program == 7)
             end
         end
     end
+end
+
+%%% Fri Jan 19 10:27:56 AM EST 2024
+% 1) visualize the data from Franka Teleop
+% 2) compare with the DHB invariants computed in Python-implementation
+if (select_program == 8)
+
+%% Data Preparation
+
+addpath(genpath(pwd));
+ccc;
+
+% load data/data_pouring_011924.mat
+load data/data_fruits_011924.mat
+
+demo_list = fieldnames(trajectories);
+numTests = numel(demo_list);
+
+%-- store the path data
+legend_texts = cell(numTests,1);
+rvec_prev = [1 1 1];
+for k = 1:numTests
+
+    pos_data = trajectories.(demo_list{k}).positions;
+    quat_data = trajectories.(demo_list{k}).quaternions;
+    num_data = size(pos_data,1);
+
+    % quaternion to rotm data
+    rotm_data = zeros(3,3,num_data);
+    rvec_data = zeros(num_data, 3);
+    for idx=1:num_data
+        % [qw, qx, qy, qz]
+        qt = [quat_data(idx,4), quat_data(idx,1:3)];
+        rotm = quat2rotm(qt); % rotation matrix
+        rvec = rotationMatrixToVector(rotm);
+
+        % make the signs consistent in rvec
+        flipped = false;
+        if idx == 1
+           flipped = rvec(1) < 0;
+        else
+           flipped = dot(rvec, rvec_data(idx-1,:)) < 0;
+        end
+
+        if flipped
+            rvec = -rvec;
+        end
+
+        % store the data
+        rotm_data(:,:,idx) = rotm;
+        rvec_data(idx, :) = rvec;
+    end
+
+    % store the result data
+    path_data{k} = struct();
+    path_data{k}.pos_data = pos_data;
+    path_data{k}.rot_data = rotm_data;
+    path_data{k}.rvec_data = rvec_data;
+    legend_texts{k} = sprintf('%d-th SE3 Path', k);
+end
+
+%-- Plot the SE3 trajectories in 3D
+plot_se3_trajectories = false;
+if (plot_se3_trajectories)
+    color_data = random_color(size(path_data,2),'jet',1232);
+
+    params = struct('auto_calculate_scale', false, 'scale', 0.3, ...
+        'show_rotation', true, 'show_coordinates', false);
+    handle_paths = plot_se3_trajectories(path_data, color_data, ...
+        'The SE3 paths from demonstrations', params);
+
+    legend(handle_paths, legend_texts, 'Location', 'best');
+end
+
+%% Pre-processing the data
+disp('Pre-processing the data...');
+
+% make the path lengths the same
+resample_paths = true;
+num_samples = 250;
+smoothing_enabled = true;
+smoothing_factor = 10; % 10 by default
+
+if resample_paths
+    for k = 1:numTests
+        pos_data_orig = path_data{k}.pos_data;
+        rvec_data_orig = path_data{k}.rvec_data;
+        rotm_data_orig = path_data{k}.rot_data;
+
+        % resample the path
+        num_data = size(pos_data_orig,1);
+        timeNew = linspace(1, num_data, num_samples-3);
+        timeNew = [timeNew timeNew(end) timeNew(end) timeNew(end)];
+        pos_data = SpatialRobotModel.cubicInterp(pos_data_orig, 1:num_data, timeNew);
+        rvec_data = SpatialRobotModel.cubicInterp(rvec_data_orig, 1:num_data, timeNew);
+
+        % resize the data
+        rotm_data = zeros(3,3,num_samples);
+        for i=1:num_samples
+            rvec = rvec_data(i,:);
+            rotm = rotationVectorToMatrix(rvec);
+            rotm_data(:,:,i) = rotm;
+        end
+
+        % smooth the data a bit
+        if smoothing_enabled
+            pos_data = smoothdata(pos_data, "sgolay", smoothing_factor);
+            rvec_data = smoothdata(rvec_data, "sgolay", smoothing_factor);
+        end
+
+        % store the modified data
+        path_data{k}.pos_data = pos_data;
+        path_data{k}.rot_data = rotm_data;
+        path_data{k}.rvec_data = rvec_data;
+    end
+end
+
+% compute DHB invariants from MATLAB side
+invariants_pos_matlab_data = cell(k,1);
+for k=1:numTests
+    pos_data = path_data{k}.pos_data;
+    rotm_data = path_data{k}.rot_data;
+    rvec_data = path_data{k}.rvec_data;
+
+    pos_diff_data = diff(path_data{k}.pos_data);
+    T0 = [rotm_data(:,:,1) pos_data(1,:)'; 0 0 0 1];
+    [linear_motion_invariant, angular_motion_invariant, linear_frame_initial, angular_frame_initial] = ...
+        computeDHB(pos_diff_data, rvec_data(1:end-1,:), 'pos', T0);
+    invariants_data_matlab{k} = struct();
+    invariants_data_matlab{k}.invariants_pos = [linear_motion_invariant, angular_motion_invariant];
+    invariants_data_matlab{k}.linear_frame_initial = linear_frame_initial;
+    invariants_data_matlab{k}.angular_frame_initial = angular_frame_initial;
+end
+
+%% Plot the invariants and SE3 data
+close all;
+haxes1 = figure('NumberTitle', 'off', 'Name', 'DHB Invariants');
+dhbInvNames = {'m_p' '\theta_p^1' '\theta_p^2' 'm_{\omega}' '\theta_{\omega}^1' '\theta_{\omega}^1'};
+
+haxes2 = figure('NumberTitle', 'off', 'Name', 'SE3 Paths');
+coordNames = {'x' 'y' 'z' 'rx' 'ry' 'rz'};
+use_invariants_from_matlab = true;
+
+method_plot = 1;
+
+% data_skip_list = [5, 8, 11, 15]; % pouring
+data_skip_list = []; % fruits
+
+for k=1:numTests
+    if ismember(k, data_skip_list)
+        continue;
+    end
+
+    fprintf('Plotting for the data %d ....\n', k);
+
+    % invariants
+    invariants_python = dhb_invariants.(demo_list{k});
+
+    if (use_invariants_from_matlab)
+        % use invarians from matlab
+        invariants_pos = invariants_data_matlab{k}.invariants_pos;
+    else
+        invariants_pos = [invariants.linear_motion_invariants, ...
+            invariants.angular_motion_invariants];
+    end
+
+    set(0,'CurrentFigure',haxes1)
+    if method_plot == 1
+        for i=1:6
+            subplot(2,3,i)
+            plot(invariants_pos(:,i),'LineWidth',2)
+            hold on;
+            ylabel(dhbInvNames{i});
+            grid on
+        end
+    elseif method_plot == 2
+
+
+    end
+
+    % SE3 coordinates
+    set(0,'CurrentFigure',haxes2)
+    for i=1:6
+        subplot(2,3,i)
+        if (i < 4)
+            plot(path_data{k}.pos_data(:,i),'LineWidth',2)
+        else
+            plot(path_data{k}.rvec_data(:,i-3),'LineWidth',2)
+        end
+        hold on;
+        ylabel(coordNames{i});
+        grid on;
+        drawnow;
+    end
+
+    keyboard;
+end
+
+%% Reconstructed data from the invariants
+
+haxes3 = figure('NumberTitle', 'off', 'Name', 'SE3 Paths (Reconstructed)');
+coordNames = {'x' 'y' 'z' 'rx' 'ry' 'rz'};
+for k=1:numTests
+    if ismember(k, data_skip_list)
+        continue;
+    end
+    invariants_pos = invariants_data_matlab{k}.invariants_pos;
+    linear_frame_initial = invariants_data_matlab{k}.linear_frame_initial;
+    angular_frame_initial = invariants_data_matlab{k}.angular_frame_initial;
+    [pos_r_data, rvec_r_data] = reconstructTrajectory(invariants_pos, linear_frame_initial, angular_frame_initial, 'pos');
+
+    % SE3 coordinates
+    set(0,'CurrentFigure',haxes3)
+    for i=1:6
+        subplot(2,3,i)
+        if (i < 4)
+            plot(pos_r_data(:,i),'LineWidth',2)
+        else
+            plot(rvec_r_data(:,i-3),'LineWidth',2)
+        end
+        hold on;
+        ylabel(coordNames{i});
+        grid on;
+        drawnow;
+    end
+end
+
 end
 
 % Construct a pose with an offset in translation and rotation
