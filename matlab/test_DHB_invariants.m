@@ -1400,7 +1400,7 @@ if (select_program == 7)
     % Define input parameters
     inputPoseData = struct('pos_data', pos_data, 'rotm_data', rotm_data);
     params = struct('Nframes', 50, 'smoothing', true, ...
-        'plot_comparison_invariants', false, 'weights', [1 1 1 1 1 1]');
+        'plot_comparison_invariants', false, 'weights', [1 2 2 1 2 2]');
 
     % loop for different transforms to the init and target poses
     numTests = 10;
@@ -1415,8 +1415,8 @@ if (select_program == 7)
     % initialize unit test
     testCase = matlab.unittest.TestCase.forInteractiveUse;
     tol = 1e-2*ones(4,4); % this can be reduced futher later
-    HALF_RANGE_POS = 0.3;
-    HALF_RANGE_ROT = 45;
+    HALF_RANGE_POS = 0.5;
+    HALF_RANGE_ROT = 60;
 
     % rng(1235);
     result_data = cell(numTests, 1);
@@ -1694,7 +1694,7 @@ for k=1:numTests
         drawnow;
     end
 
-    keyboard;
+    % keyboard;
 end
 
 %% Reconstructed data from the invariants
